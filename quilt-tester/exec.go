@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -15,6 +14,7 @@ import (
 	"github.com/NetSys/quilt/api"
 	"github.com/NetSys/quilt/api/client"
 	"github.com/NetSys/quilt/db"
+	"github.com/NetSys/quilt/quilt-tester/util"
 )
 
 // Stored in a variable so we can mock it out for unit tests.
@@ -44,7 +44,7 @@ func runSpecUntilConnected(spec string) (string, string, error) {
 		return true
 	}
 
-	return stdout, stderr, waitFor(allMachinesConnected, 8*time.Minute)
+	return stdout, stderr, util.WaitFor(allMachinesConnected, 8*time.Minute)
 }
 
 // stop stops the given namespace, and blocks until there are no more machines
@@ -68,7 +68,7 @@ func stop(namespace string) (string, string, error) {
 		return len(instances) == 0
 	}
 
-	return stdout, stderr, waitFor(stopped, 2*time.Minute)
+	return stdout, stderr, util.WaitFor(stopped, 2*time.Minute)
 }
 
 // downloadSpecs gets the given import path.
@@ -88,22 +88,6 @@ func runSpec(spec string) (string, string, error) {
 func runQuiltDaemon() {
 	cmd := exec.Command("/quilt", "daemon")
 	execCmd(cmd, "QUILT")
-}
-
-// waitFor waits until `pred` is satisfied, or `timeout` Duration has passed.
-func waitFor(pred func() bool, timeout time.Duration) error {
-	timeoutChan := time.After(timeout)
-	for {
-		select {
-		case <-timeoutChan:
-			return errors.New("timed out")
-		default:
-			if pred() {
-				return nil
-			}
-		}
-		sleep(1 * time.Second)
-	}
 }
 
 func logAndUpdate(sc bufio.Scanner, l fileLogger, logFmt string) chan string {
