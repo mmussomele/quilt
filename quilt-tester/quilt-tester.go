@@ -12,6 +12,7 @@ import (
 	"github.com/Sirupsen/logrus"
 
 	"github.com/NetSys/quilt/db"
+	"github.com/NetSys/quilt/quilt-tester/util"
 	"github.com/NetSys/quilt/stitch"
 )
 
@@ -219,30 +220,6 @@ func (t tester) namespace() string {
 	return fmt.Sprintf("tester-%s", sanitizedIP)
 }
 
-func toPost(failed bool, pretext string, text string) slackPost {
-	iconemoji := ":confetti_ball:"
-	color := "#009900" // Green
-	if failed {
-		iconemoji = ":oncoming_police_car:"
-		color = "#D00000" // Red
-	}
-
-	return slackPost{
-		Channel:   os.Getenv("SLACK_CHANNEL"),
-		Color:     color,
-		Pretext:   pretext,
-		Username:  "quilt-bot",
-		Iconemoji: iconemoji,
-		Fields: []message{
-			{
-				Title: "Continuous Integration",
-				Short: false,
-				Value: text,
-			},
-		},
-	}
-}
-
 func (t tester) slack(initialized bool) {
 	log.testerLogger.infoln("Posting to slack.")
 
@@ -280,7 +257,8 @@ func (t tester) slack(initialized bool) {
 		}
 	}
 
-	err := slack(slackEndpoint, toPost(failed, pretext, text))
+	err := util.Slack(slackEndpoint, util.ToPost(failed, os.Getenv("SLACK_CHANNEL"),
+		pretext, text))
 	if err != nil {
 		l := log.testerLogger
 		l.infoln("Error posting to Slack.")

@@ -25,6 +25,7 @@ type SubCommand interface {
 	Usage()
 }
 
+// getClient gets the client at the given host address.
 // Stored in a variable so we can mock it out for the unit tests.
 var getClient = func(host string) (client.Client, error) {
 	c, err := client.New(host)
