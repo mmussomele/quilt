@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/NetSys/quilt/quilt-tester/util"
+
 	"github.com/spf13/afero"
 )
 
@@ -36,8 +38,7 @@ func TestCmdExec(t *testing.T) {
 }
 
 func TestWaitFor(t *testing.T) {
-	sleep = func(t time.Duration) {}
-
+	util.Sleep = func(t time.Duration) {}
 	calls := 0
 	callThreeTimes := func() bool {
 		calls++
@@ -46,19 +47,20 @@ func TestWaitFor(t *testing.T) {
 		}
 		return false
 	}
-	err := waitFor(callThreeTimes, 5)
-	if err != nil {
+
+	if err := util.WaitFor(callThreeTimes, 5*time.Second); err != nil {
 		t.Errorf("Unexpected error: %s", err.Error())
 	}
+
 	if calls != 3 {
 		t.Errorf("Incorrect number of calls to predicate: %d", calls)
 	}
 
-	err = waitFor(func() bool {
+	err := util.WaitFor(func() bool {
 		return false
 	}, 300*time.Millisecond)
 	if err.Error() != "timed out" {
-		t.Errorf("Expected waitFor to timeout")
+		t.Errorf("Expected util.WaitFor to timeout")
 	}
 }
 
