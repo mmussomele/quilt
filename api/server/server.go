@@ -22,7 +22,8 @@ import (
 )
 
 type server struct {
-	dbConn db.Conn
+	dbConn     db.Conn
+	stitchChan chan string
 }
 
 // Run accepts incoming `quiltctl` connections and responds to them.
@@ -33,7 +34,7 @@ func Run(conn db.Conn, listenAddr string) error {
 	}
 
 	var sock net.Listener
-	apiServer := server{conn}
+	apiServer := server{conn, make(chan string, 1)}
 	for {
 		sock, err = net.Listen(proto, addr)
 
@@ -54,6 +55,22 @@ func Run(conn db.Conn, listenAddr string) error {
 		sock.Close()
 		os.Exit(0)
 	}(sigc)
+
+	go func() {
+		for spec := range apiServer.stitchChan {
+			compiledSpec, err := stitch.New(spec, stitch.DefaultImportGetter)
+			if err != nil {
+				log.WithError(err).WithField("spec",
+					spec).Error("Failed to compile")
+				continue
+			}
+
+			err = engine.UpdatePolicy(apiServer.dbConn, compiledSpec)
+			if err != nil {
+				log.WithError(err).Error("Failed to update policy")
+			}
+		}
+	}()
 
 	s := grpc.NewServer()
 	pb.RegisterAPIServer(s, apiServer)
@@ -89,16 +106,10 @@ func (s server) Query(cts context.Context, query *pb.DBQuery) (*pb.QueryReply, e
 	return &pb.QueryReply{TableContents: string(json)}, nil
 }
 
+// XXX: Right now, this just sends the stitch to a channel to be compiled since a stitch
+// can take longer than the timeout to compile, so it's rather hard to test. We should
+// rework it to be able to provide feedback on the actual compiling of the stitch.
 func (s server) Run(cts context.Context, runReq *pb.RunRequest) (*pb.RunReply, error) {
-	stitch, err := stitch.New(runReq.Stitch, stitch.DefaultImportGetter)
-	if err != nil {
-		return &pb.RunReply{}, err
-	}
-
-	err = engine.UpdatePolicy(s.dbConn, stitch)
-	if err != nil {
-		return &pb.RunReply{}, err
-	}
-
+	s.stitchChan <- runReq.Stitch
 	return &pb.RunReply{}, nil
 }
