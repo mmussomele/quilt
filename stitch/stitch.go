@@ -178,6 +178,11 @@ func New(specStr string, getter ImportGetter) (Stitch, error) {
 		code: specStr,
 		ctx:  &ctx,
 	}
+
+	if len(ctx.invariants) == 0 {
+		return spec, nil
+	}
+
 	graph, err := InitializeGraph(spec)
 	if err != nil {
 		return Stitch{}, err
