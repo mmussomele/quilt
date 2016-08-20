@@ -15,8 +15,11 @@ import (
 )
 
 const (
+	// The timeout for making requests to the daemon once we've connected.
+	requestTimeout = time.Minute
+
 	// The timeout for connecting to the daemon.
-	timeout = 5 * time.Second
+	connectTimeout = 5 * time.Second
 )
 
 // Client provides methods to interact with the Quilt daemon.
@@ -53,7 +56,7 @@ func New(lAddr string) (Client, error) {
 		return net.DialTimeout(proto, dialAddr, t)
 	}
 	cc, err := grpc.Dial(addr, grpc.WithDialer(dialer), grpc.WithInsecure(),
-		grpc.WithBlock(), grpc.WithTimeout(timeout))
+		grpc.WithBlock(), grpc.WithTimeout(connectTimeout))
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +69,7 @@ func New(lAddr string) (Client, error) {
 }
 
 func query(pbClient pb.APIClient, table db.TableType) (interface{}, error) {
-	ctx, _ := context.WithTimeout(context.Background(), timeout)
+	ctx, _ := context.WithTimeout(context.Background(), requestTimeout)
 	reply, err := pbClient.Query(ctx, &pb.DBQuery{Table: string(table)})
 	if err != nil {
 		return nil, err
@@ -134,7 +137,7 @@ func (c clientImpl) QueryEtcd() ([]db.Etcd, error) {
 
 // RunStitch makes a request to the Quilt daemon to execute the given stitch.
 func (c clientImpl) RunStitch(stitch string) error {
-	ctx, _ := context.WithTimeout(context.Background(), timeout)
+	ctx, _ := context.WithTimeout(context.Background(), requestTimeout)
 	_, err := c.pbClient.Run(ctx, &pb.RunRequest{Stitch: stitch})
 	return err
 }
