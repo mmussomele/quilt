@@ -81,8 +81,8 @@ func Slack(hookurl string, p SlackPost) error {
 	if err != nil {
 		return err
 	}
-
 	defer resp.Body.Close()
+
 	if resp.StatusCode != 200 {
 		t, _ := ioutil.ReadAll(resp.Body)
 		return errors.New(string(t))
