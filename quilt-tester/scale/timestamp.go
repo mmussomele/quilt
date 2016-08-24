@@ -1,0 +1,118 @@
+package main
+
+import (
+	"fmt"
+	"regexp"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	log "github.com/Sirupsen/logrus"
+)
+
+func getLastTimestamp(workers []string) time.Time {
+	// Everything is after the zero time
+	latestTimestamp := time.Time{}
+	containers := getContainers(workers)
+	containerCount := len(containers)
+
+	hostMap := map[string][]string{}
+	for _, container := range containers {
+		hostMap[container.ip] = append(hostMap[container.ip], container.name)
+	}
+
+	channels := []chan time.Time{}
+	for ip, containers := range hostMap {
+		channels = append(channels, queryTimestamps(ip, containers))
+	}
+
+	out := mergeTimestamps(channels)
+
+	timestampCount := 0
+	fmt.Printf("Collecting timestamps... (0.00%s)\r", "%") // go vet is dumb
+	for ts := range out {
+		if ts.After(latestTimestamp) {
+			latestTimestamp = ts
+		}
+
+		timestampCount++
+		percComplete := 100 * float64(timestampCount) / float64(containerCount)
+		fmt.Printf("Collecting timestamps... (%.2f%%)\r", percComplete)
+	}
+	fmt.Print("                                  \r")
+
+	return latestTimestamp
+}
+
+// When querying timestamps, we can only have one ssh connection to each host at a time,
+// so we can parallelize across multiple hosts, but have to serialize for each host.
+func queryTimestamps(minion string, containers []string) chan time.Time {
+	out := make(chan time.Time)
+	timestampRegex := regexp.MustCompile(`quilt_timestamp=(\d+)\n`)
+	cmdTemplate := `docker logs %s`
+
+	go func() {
+		defer close(out)
+
+		collected := map[string]struct{}{}
+		for len(collected) < len(containers) {
+			for _, container := range containers {
+				if _, ok := collected[container]; ok {
+					continue
+				}
+
+				cmdStr := fmt.Sprintf(cmdTemplate, container)
+				args := strings.Fields(cmdStr)
+				cmd := ssh(minion, args...)
+				output, err := cmd.Output()
+				if err != nil {
+					log.WithError(err).WithField("cmd",
+						cmd).Errorf("ssh into %s:%s "+
+						"failed", minion, container)
+					continue
+				}
+
+				match := timestampRegex.FindSubmatch(output)
+				if len(match) != 2 {
+					continue
+				}
+
+				stamp := string(match[1])
+				seconds, err := strconv.ParseInt(stamp, 10, 64)
+				if err != nil {
+					continue
+				}
+
+				out <- time.Unix(seconds, 0)
+				collected[container] = struct{}{}
+			}
+		}
+	}()
+
+	return out
+}
+
+func mergeTimestamps(channels []chan time.Time) chan time.Time {
+	var wg sync.WaitGroup
+	out := make(chan time.Time)
+
+	wg.Add(len(channels))
+	go func() {
+		wg.Wait()
+		close(out)
+	}()
+
+	collect := func(vals chan time.Time) {
+		for val := range vals {
+			out <- val
+		}
+		wg.Done()
+	}
+
+	for _, c := range channels {
+		go collect(c)
+	}
+
+	return out
+}
