@@ -3,6 +3,7 @@ package pprofile
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"runtime/pprof"
 	"time"
 )
@@ -43,12 +44,21 @@ func (pro *Prof) Start() error {
 	return nil
 }
 
-// Stop profiling and output results to a file.
+// Stop profiling and output results to a file. Also run dump a memory profile.
 func (pro *Prof) Stop() error {
 	pprof.StopCPUProfile()
 	pro.fd.Close()
 	if err := os.Rename(pro.fname+".tmp", pro.fname); err != nil {
 		return fmt.Errorf("failed to rename tmp file: %s", err)
+	}
+
+	memFile, err := os.Create(pro.fname + ".mem")
+	if err != nil {
+		return fmt.Errorf("failed to create mem file: %s", err)
+	}
+	runtime.GC()
+	if err := pprof.WriteHeapProfile(memFile); err != nil {
+		return fmt.Errorf("failed to write heap profile: %s", err)
 	}
 	return nil
 }
