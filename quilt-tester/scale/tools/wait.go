@@ -1,4 +1,4 @@
-package main
+package tools
 
 import (
 	"fmt"
@@ -9,7 +9,9 @@ import (
 	log "github.com/Sirupsen/logrus"
 )
 
-func containersBooted(minionList []string, expCounts map[string]int) func() bool {
+// ContainersBooted returns a func() bool that returns true when all expected containers
+// (described by expCounts) have booted.
+func ContainersBooted(minionList []string, expCounts map[string]int) func() bool {
 	expTotal := 0
 	for _, count := range expCounts {
 		expTotal += count
@@ -17,9 +19,9 @@ func containersBooted(minionList []string, expCounts map[string]int) func() bool
 
 	return func() bool {
 		counts := map[string]int{}
-		containers := getContainers(minionList)
+		containers := GetContainers(minionList)
 		for _, c := range containers {
-			counts[c.image]++
+			counts[c.Image]++
 		}
 
 		// Don't report progress when waiting for containers to shutdown
@@ -43,7 +45,10 @@ func containersBooted(minionList []string, expCounts map[string]int) func() bool
 	}
 }
 
-func machinesBooted(localClient client.Client, ipOnly bool) func() bool {
+// MachinesBooted returns a func() bool that returns true when all expected machines have
+// connected. If ipOnly is true, it only waits for all expected machines to get public ip
+// adresses.
+func MachinesBooted(localClient client.Client, ipOnly bool) func() bool {
 	return func() bool {
 		machines, err := localClient.QueryMachines()
 		if err != nil {
