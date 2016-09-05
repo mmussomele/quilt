@@ -1,4 +1,4 @@
-package main
+package tools
 
 import (
 	"fmt"
@@ -11,15 +11,16 @@ import (
 	log "github.com/Sirupsen/logrus"
 )
 
-func getLastTimestamp(workers []string) time.Time {
+// GetLastTimestamp gets the latest timestamp to be output by a non-quilt container.
+func GetLastTimestamp(workers []string) time.Time {
 	// Everything is after the zero time
 	latestTimestamp := time.Time{}
-	containers := getContainers(workers)
+	containers := GetContainers(workers)
 	containerCount := len(containers)
 
 	hostMap := map[string][]string{}
 	for _, container := range containers {
-		hostMap[container.ip] = append(hostMap[container.ip], container.name)
+		hostMap[container.IP] = append(hostMap[container.IP], container.Name)
 	}
 
 	channels := []chan time.Time{}
@@ -64,7 +65,7 @@ func queryTimestamps(minion string, containers []string) chan time.Time {
 
 				cmdStr := fmt.Sprintf(cmdTemplate, container)
 				args := strings.Fields(cmdStr)
-				cmd := ssh(minion, args...)
+				cmd := SSH(minion, args...)
 				output, err := cmd.Output()
 				if err != nil {
 					log.WithError(err).WithField("cmd",
