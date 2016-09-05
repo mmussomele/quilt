@@ -14,7 +14,6 @@ def run_parser():
     parser = argparse.ArgumentParser(description="run the scale tests", usage="%(prog)s run [-h] [-start N] [-factor M]")
     parser.add_argument('--start', default=100, type=int)
     parser.add_argument('--factor', default=1.5, type=float)
-    parser.add_argument('--fullmesh', default=False, type=bool)
     return parser
 
 PREBOOT_SPEC = "./plot/preboot-scale.spec"
@@ -33,8 +32,8 @@ scale -preboot-stitch={0}.tmp \
 -append -nostop \
 """
 
-DEFAULT_CMD = SCALE_CMD.format(PREBOOT_SPEC, BOOT_SPEC, POSTBOOT_SPEC, OUT_FILE, LOG_FILE)
-FULL_MESH_CMD = SCALE_CMD.format(PREBOOT_SPEC, FULL_MESH_BOOT_SPEC, FULL_MESH_POST_SPEC, OUT_FILE, LOG_FILE)
+DEFAULT_CMD = SCALE_CMD.format(PREBOOT_SPEC, BOOT_SPEC, POSTBOOT_SPEC, OUT_FILE + ".disconnect", LOG_FILE)
+FULL_MESH_CMD = SCALE_CMD.format(PREBOOT_SPEC, FULL_MESH_BOOT_SPEC, FULL_MESH_POST_SPEC, OUT_FILE + ".connected", LOG_FILE)
 
 def exp_iter(start, factor):
     while True:
@@ -50,7 +49,7 @@ def make_scale_process(count, fullmesh, arg):
         return subprocess.Popen(shlex.split(FULL_MESH_CMD + arg))
     return subprocess.Popen(shlex.split(DEFAULT_CMD + arg))
 
-def run_process(count, fullmesh, arg=""):
+def run_process(count, full_mesh, arg):
     scale_process = make_scale_process(count, fullmesh, arg)
     try:
         returncode = scale_process.wait()
@@ -62,14 +61,20 @@ def run_process(count, fullmesh, arg=""):
         scale_process.terminate()
         sys.exit(0)
 
+def run_test(count, run_all, arg=""):
+    run_process(count, False, arg) # always run the disconnected test
+    if run_all:
+        run_process(count, True, arg) # run the full mesh test
+        run_swarm(count)        
+
 def run_scale(args):
     options = run_parser().parse_args(args)
     bootcounts = exp_iter(options.start, options.factor)
-    run_process(1, False) # boot one container to ensure that the machines are fully booted
+    run_test(1, False) # boot one container to ensure that the machines are fully booted
     if os.path.exists(LOG_FILE):
         os.remove(LOG_FILE)
     for count in bootcounts:
-        run_process(count, options.fullmesh, "-ip-only")
+        run_test(count, True, "-ip-only")
 
 def run(args):
     prog_name = args[0]
