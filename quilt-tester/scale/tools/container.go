@@ -1,4 +1,4 @@
-package main
+package tools
 
 import (
 	"bytes"
@@ -16,20 +16,22 @@ var defaultContainers = map[string]struct{}{
 	"minion":         {},
 }
 
-type scaleContainer struct {
-	ip    string
-	image string
-	name  string
+// ScaleContainer contains the IP, Image and Name of a container.
+type ScaleContainer struct {
+	IP    string
+	Image string
+	Name  string
 }
 
-func getContainers(minionList []string) []scaleContainer {
-	channels := []chan scaleContainer{}
+// GetContainers fetches all of the current non-quilt containers from the workers.
+func GetContainers(minionList []string) []ScaleContainer {
+	channels := []chan ScaleContainer{}
 	for _, minion := range minionList {
 		channels = append(channels, queryContainers(minion))
 	}
 
 	out := mergeContainers(channels)
-	containers := []scaleContainer{}
+	containers := []ScaleContainer{}
 	for container := range out {
 		containers = append(containers, container)
 	}
@@ -37,12 +39,12 @@ func getContainers(minionList []string) []scaleContainer {
 	return containers
 }
 
-func queryContainers(host string) chan scaleContainer {
+func queryContainers(host string) chan ScaleContainer {
 	args := []string{"docker", "ps", "-a"}
-	out := make(chan scaleContainer)
+	out := make(chan ScaleContainer)
 	go func() {
 		defer close(out)
-		output, err := ssh(host, args...).Output()
+		output, err := SSH(host, args...).Output()
 		if err != nil {
 			return
 		}
@@ -54,7 +56,7 @@ func queryContainers(host string) chan scaleContainer {
 				continue
 			}
 
-			container.ip = host
+			container.IP = host
 			out <- container
 		}
 	}()
@@ -62,9 +64,9 @@ func queryContainers(host string) chan scaleContainer {
 	return out
 }
 
-func mergeContainers(channels []chan scaleContainer) chan scaleContainer {
+func mergeContainers(channels []chan ScaleContainer) chan ScaleContainer {
 	var wg sync.WaitGroup
-	out := make(chan scaleContainer)
+	out := make(chan ScaleContainer)
 
 	wg.Add(len(channels))
 	go func() {
@@ -72,7 +74,7 @@ func mergeContainers(channels []chan scaleContainer) chan scaleContainer {
 		close(out)
 	}()
 
-	collect := func(vals chan scaleContainer) {
+	collect := func(vals chan ScaleContainer) {
 		for val := range vals {
 			out <- val
 		}
@@ -86,19 +88,19 @@ func mergeContainers(channels []chan scaleContainer) chan scaleContainer {
 	return out
 }
 
-func parseContainer(container []byte) (scaleContainer, error) {
+func parseContainer(container []byte) (ScaleContainer, error) {
 	containersRegex := `[a-f0-9]+\s+(\S+)\s+".+"\s+(?:(?:\w+\s)+\s+){2}\s+([\w\-]+)`
 	containerMatch := regexp.MustCompile(containersRegex)
 
 	groups := containerMatch.FindSubmatch(container)
 	if len(groups) != 3 {
-		return scaleContainer{}, fmt.Errorf("malformed container: %s", container)
+		return ScaleContainer{}, fmt.Errorf("malformed container: %s", container)
 	}
 
 	image, name := string(groups[1]), string(groups[2])
 	if _, ok := defaultContainers[name]; ok {
-		return scaleContainer{}, fmt.Errorf("default container: %s", container)
+		return ScaleContainer{}, fmt.Errorf("default container: %s", container)
 	}
 
-	return scaleContainer{image: image, name: name}, nil
+	return ScaleContainer{Image: image, Name: name}, nil
 }
