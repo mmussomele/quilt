@@ -20,6 +20,9 @@ all:
 install:
 	cd -P . && go install .
 
+scale:
+	cd -P . && go install ./quilt-tester/scale
+
 check: format-check
 	go test $(PACKAGES)
 
