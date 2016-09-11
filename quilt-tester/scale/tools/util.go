@@ -188,8 +188,8 @@ func slackError(request CleanupRequest) {
 // stop attempts to use the quilt client to stop the current namespace but makes no
 // attempts to check that it worked. That is up to the user to check.
 func stop(namespace string, localClient client.Client) {
-	emptySpec := "AdminACL = [];\n" +
-		fmt.Sprintf(`Namespace = "%s";`, namespace)
+	emptySpec := "setAdminACL([]);\n" +
+		fmt.Sprintf(`setNamespace("%s");`, namespace)
 
 	log.Infof(`Stopping namespace "%s"`, namespace)
 	if err := localClient.RunStitch(emptySpec); err != nil {
