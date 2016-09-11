@@ -23,7 +23,7 @@ func LoadSpec(path, namespace string) (string, error) {
 		return path, err
 	}
 
-	return flatSpec + fmt.Sprintf("\nNamespace = \"%s\";", namespace), nil
+	return flatSpec + "\n" + fmt.Sprintf(`setNamespace("%s");`, namespace), nil
 }
 
 // ReadFile reads and returns the contents of the file located at the path given.

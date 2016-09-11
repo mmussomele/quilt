@@ -30,6 +30,7 @@ scale -preboot-stitch={0}.tmp \
 -log-file={3} \
 -quilt-log-file={4} \
 -append -nostop \
+-namespace=matt-scale-dev
 """
 # -postboot-stitch={2}.tmp \
 
@@ -40,6 +41,7 @@ swarm -preboot-stitch={0}.tmp \
 -out-file={3} \
 -log-file={4} \
 -append -nostop \
+-namespace=matt-scale-dev
 """
 
 DEFAULT_CMD = SCALE_CMD.format(PREBOOT_SPEC, BOOT_SPEC, OUT_FILE + ".disconnect", LOG_FILE, LOG_FILE + "-quilt")
@@ -92,7 +94,7 @@ def run_test(count, run_all, image, arg=""):
     run_process(make_scale_process, count, False, arg) # always run the disconnected test
     if not run_all:
         return
-    run_process(make_scale_process, count, True, "-ip-only") # run the full mesh test
+    #run_process(make_scale_process, count, True, "-ip-only") # run the full mesh test
     run_process(make_swarm_process, count, image, "-ip-only")
 
 def run_scale(args):

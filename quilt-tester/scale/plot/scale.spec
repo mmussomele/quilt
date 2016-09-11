@@ -1,19 +1,42 @@
 var image = "mmussomele/sleep";
-var numMasters = 1;
-var numWorkers = 8;
 var numContainers = {};
 
-AdminACL = ["local"]
+setAdminACL(["local"])
 
-var machineCfg = new Machine({{
-    provider: "Amazon",
+gitKeys = githubKeys("mmussomele").concat(githubKeys("ejj")).concat(githubKeys("kklin"))
+
+var numMasters = 1;
+var machineCfgMaster = new Machine({{
+    provider: "AmazonReserved",
     size: "m4.4xlarge",
-    keys: githubKeys("YOUR_GITHUB_USERNAME"),
+    region: "us-west-1",
+    diskSize: 64,
+    keys: allKeys,
 }});
+deployMasters(numMasters, machineCfgMaster);
 
-deployWorkers(numWorkers, machineCfg);
-deployMasters(numMasters, machineCfg);
+var numWorkersReserved = 9;
+var machineCfgWorkerReserved = new Machine({{
+    provider: "AmazonReserved",
+    size: "m4.4xlarge",
+    region: "us-west-1",
+    diskSize: 32,
+    keys: allKeys,
+}});
+deployWorkers(numWorkersReserved, machineCfgWorkerReserved);
+
+var numWorkersSpot = 7;
+var machineCfgWorkerSpot = new Machine({{
+    provider: "AmazonSpot",
+    size: "m4.4xlarge",
+    region: "us-west-1",
+    diskSize: 32,
+    keys: allKeys,
+}});
+deployWorkers(numWorkersSpot, machineCfgWorkerSpot);
 
 var sleepContainers = _(numContainers).times(function() {{
-    return new Docker(image, {{args: [], env: {{}}}});
+    return new Docker(image);
 }});
+
+workerLabel = new Label(_.uniqueId("sleep-wk"), sleepContainers);
