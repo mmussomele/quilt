@@ -42,7 +42,7 @@ type ContainerSlice []Container
 type Client struct {
 	client
 	*sync.Mutex
-	imageCache map[string]time.Time
+	imageCache map[string]struct{}
 }
 
 // RunOptions changes the behavior of the Run function.
@@ -87,7 +87,7 @@ func New(sock string) Client {
 		break
 	}
 
-	return Client{client, &sync.Mutex{}, map[string]time.Time{}}
+	return Client{client, &sync.Mutex{}, map[string]struct{}{}}
 }
 
 // Run creates and starts a new container in accordance RunOptions.
@@ -241,8 +241,7 @@ func (dk Client) Pull(image string) error {
 	dk.Lock()
 	defer dk.Unlock()
 
-	now := time.Now()
-	if t, ok := dk.imageCache[image]; ok && t.Before(now) {
+	if _, ok := dk.imageCache[image]; ok {
 		return nil
 	}
 
@@ -252,7 +251,7 @@ func (dk Client) Pull(image string) error {
 		return err
 	}
 
-	dk.imageCache[image] = now.Add(pullCacheTimeout)
+	dk.imageCache[image] = struct{}{}
 	return nil
 }
 
