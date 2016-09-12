@@ -309,13 +309,23 @@
 			"Rev": "c764234c3b4490a7b6cd6239607996c502d9ce22"
 		},
 		{
+			"ImportPath": "github.com/docker/engine-api/types/mount",
+			"Comment": "v0.4.0-66-g4290f40",
+			"Rev": "4290f40c056686fcaa5c9caf02eac1dde9315adf"
+		},
+		{
+			"ImportPath": "github.com/docker/engine-api/types/swarm",
+			"Comment": "v0.4.0-66-g4290f40",
+			"Rev": "4290f40c056686fcaa5c9caf02eac1dde9315adf"
+		},
+		{
 			"ImportPath": "github.com/docker/go-units",
 			"Comment": "v0.3.0-2-g09dda9d",
 			"Rev": "09dda9d4b0d748c57c14048906d3d094a58ec0c9"
 		},
 		{
 			"ImportPath": "github.com/fsouza/go-dockerclient",
-			"Rev": "9df1f25d542e79d7909ef321b5c13c5d34ea7f1d"
+			"Rev": "01804dec8a84d0a77e63611f2b62d33e9bb2b64a"
 		},
 		{
 			"ImportPath": "github.com/go-ini/ini",
