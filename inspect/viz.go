@@ -100,5 +100,6 @@ func graphviz(outputFormat string, slug string, dot string) {
 			slug+".dot")
 	}
 	writeGraph.Stdout = os.Stdout
+	writeGraph.Stderr = os.Stderr
 	writeGraph.Run()
 }
