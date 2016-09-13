@@ -28,6 +28,18 @@ const scaleNamespace = "scale-bd89e4c89f4d384e7afb155a3af99d8a6f4f5a06a9fecf0b6d
 // The time limit for how long containers take to boot.
 const bootLimit = time.Hour
 
+type scaleParams struct {
+	command        *exec.Cmd
+	localClient    client.Client
+	prebootPath    string
+	specPath       string
+	postbootPath   string
+	namespace      string
+	outputFile     string
+	appendToOutput bool
+	ipOnly         bool
+}
+
 func main() {
 	log.SetLevel(log.InfoLevel)
 	log.SetFormatter(util.Formatter{})
@@ -55,31 +67,22 @@ func main() {
 		" get public IPs")
 	flag.Parse()
 
-	namespace := *namespaceFlag
-	prebootPath := *prebootFlag
-	specPath := *specFlag
-	postbootPath := *postbootFlag
-	outputFile := *outputFlag
-	logOutputPath := *logFlag
-	stopMachines := !*nostopFlag
-	ipOnly := *ipOnlyFlag
-
-	if prebootPath == "" {
+	if *prebootFlag == "" {
 		log.Error("No preboot spec supplied.")
 		usage()
 	}
 
-	if specPath == "" {
+	if *specFlag == "" {
 		log.Error("No main spec supplied")
 		usage()
 	}
 
-	if outputFile == "" {
+	if *outputFlag == "" {
 		log.Error("No output file specified")
 		usage()
 	}
 
-	logFile, err := tools.CreateLogFile(logOutputPath)
+	logFile, err := tools.CreateLogFile(*logFlag)
 	if err != nil {
 		log.WithError(err).Fatal("Failed to open log file")
 	}
@@ -102,69 +105,91 @@ func main() {
 		os.Exit(1)
 	}
 
-	cleanupReq := tools.CleanupRequest{
-		Command:     cmd,
-		Namespace:   namespace,
-		LocalClient: localClient,
-		Stop:        true,
-		ExitCode:    1,
-		Message:     "timed out",
+	params := scaleParams{
+		command:        cmd,
+		localClient:    localClient,
+		prebootPath:    *prebootFlag,
+		specPath:       *specFlag,
+		postbootPath:   *postbootFlag,
+		namespace:      *namespaceFlag,
+		outputFile:     *outputFlag,
+		appendToOutput: *appendFlag,
+		ipOnly:         *ipOnlyFlag,
 	}
 
+	cleanupRequest := tools.CleanupRequest{
+		Command:     cmd,
+		Namespace:   params.namespace,
+		LocalClient: localClient,
+		Stop:        !*nostopFlag,
+		ExitCode:    0,
+		Message:     "",
+	}
+
+	if err := runScale(params); err != nil {
+		log.WithError(err).Error("The scale tester exited with an error.")
+
+		cleanupRequest.Stop = true
+		cleanupRequest.ExitCode = 1
+		cleanupRequest.Message = err.Error()
+		cleanupRequest.Time = time.Now()
+
+		err = tools.SaveLogs(localClient, *quiltLogFlag, *logFlag)
+		if err != nil {
+			log.WithError(err).Error("Failed to save logs")
+		}
+	}
+
+	tools.Cleanup(cleanupRequest)
+}
+
+func runScale(params scaleParams) error {
 	// Load specs early so that we fail early if they aren't good
 	log.Info("Loading preboot stitch")
-	flatPreSpec, err := tools.LoadSpec(prebootPath, namespace)
+	flatPreSpec, err := tools.LoadSpec(params.prebootPath, params.namespace)
 	if err != nil {
-		log.WithError(err).WithField("spec", prebootPath).Error("Failed to load")
-		cmd.Process.Kill()
-		os.Exit(1)
+		return fmt.Errorf("failed to load spec '%s': %s", params.prebootPath,
+			err.Error())
 	}
 
 	log.Info("Loading main stitch")
-	flatSpec, err := tools.LoadSpec(specPath, namespace)
+	flatSpec, err := tools.LoadSpec(params.specPath, params.namespace)
 	if err != nil {
-		log.WithError(err).WithField("spec", specPath).Error("Failed to load")
-		cmd.Process.Kill()
-		os.Exit(1)
+		return fmt.Errorf("failed to load spec '%s': %s", params.specPath,
+			err.Error())
 	}
 
 	flatPostSpec := ""
-	if postbootPath == "" {
+	if params.postbootPath == "" {
 		log.Info("No postboot spec provided.")
 	} else {
 		log.Info("Loading postboot stitch")
-		flatPostSpec, err = tools.LoadSpec(postbootPath, namespace)
+		flatPostSpec, err = tools.LoadSpec(params.postbootPath, params.namespace)
 		if err != nil {
-			log.WithError(err).WithField("spec",
-				postbootPath).Error("Failed to load")
-			cmd.Process.Kill()
-			os.Exit(1)
+			return fmt.Errorf("failed to load spec '%s': %s",
+				params.postbootPath, err.Error())
 		}
 	}
 
 	log.Info("Running preboot stitch")
-	if err := localClient.RunStitch(flatPreSpec); err != nil {
-		log.WithError(err).Error("Failed to run preboot stitch")
-		cmd.Process.Kill()
-		os.Exit(1)
+	if err := params.localClient.RunStitch(flatPreSpec); err != nil {
+		return fmt.Errorf("failed to run preboot stitch: %s", err.Error())
 	}
-	defer tools.Cleanup(cleanupReq)
 
-	err = testUtil.WaitFor(tools.MachinesBooted(localClient, ipOnly), 10*time.Minute)
+	err = testUtil.WaitFor(tools.MachinesBooted(params.localClient, params.ipOnly),
+		10*time.Minute)
 	if err != nil {
-		log.WithError(err).Error("Failed to boot machines")
-		return
+		return fmt.Errorf("failed to boot machines: %s", err.Error())
 	}
 	log.Info("Machines have booted successfully")
 
-	_, workerIPs, err := tools.GetMachineIPs(localClient)
+	_, workerIPs, err := tools.GetMachineIPs(params.localClient)
 	if err != nil {
-		log.WithError(err).Error("Failed to get worker IPs")
-		return
+		return fmt.Errorf("failed to get worker IPs: %s", err.Error())
 	}
 
 	// Listen for the machines in the db to change. If they do, signal a shutdown.
-	go tools.ListenForMachineChange(localClient)
+	go tools.ListenForMachineChange(params.localClient)
 
 	// When running multiple scale tester instances back to back, if we don't wait
 	// for old containers to shutdown we get bad times
@@ -172,51 +197,37 @@ func main() {
 	err = tools.WaitForShutdown(tools.ContainersBooted(workerIPs,
 		map[string]int{}), bootLimit)
 	if err != nil {
-		log.WithError(err).Error("Containers took too long to shut down")
-		return
+		return fmt.Errorf("failed to shutdown containers: %s", err.Error())
 	}
 
-	err = timeStitch(flatSpec, "main", outputFile,
-		*appendFlag, localClient, cleanupReq)
+	err = timeStitch(flatSpec, "main", params.outputFile,
+		params.appendToOutput, params.localClient)
 	if err != nil {
-		if err == tools.ErrShutdown {
-			cleanupShutdown(err, cleanupReq)
-		}
-		return
+		return fmt.Errorf("failed main boot run: [%s]", err.Error())
 	}
-
-	cleanupReq.ExitCode = 0
-	cleanupReq.Message = "exiting normally"
-	cleanupReq.Stop = stopMachines
 
 	// If we aren't running a post boot timing test, just exit
 	if flatPostSpec == "" {
-		tools.Cleanup(cleanupReq)
+		return nil
 	}
 
-	err = timeStitch(flatPostSpec, "+1", outputFile,
-		*appendFlag, localClient, cleanupReq)
+	err = timeStitch(flatPostSpec, "+1", params.outputFile,
+		params.appendToOutput, params.localClient)
 	if err != nil {
-		if err == tools.ErrShutdown {
-			cleanupShutdown(err, cleanupReq)
-		}
-		return
+		return fmt.Errorf("failed +1 boot run: [%s]", err.Error())
 	}
 
-	tools.Cleanup(cleanupReq)
+	return nil
 }
 
 func timeStitch(flatSpec, name, outputFile string,
-	appendData bool, localClient client.Client,
-	cleanReq tools.CleanupRequest) error {
+	appendData bool, localClient client.Client) error {
 
 	// Gather information on the expected state of the system from the main stitch
 	log.Infof("Querying %s stitch containers", name)
 	expectedContainers, err := queryStitchContainers(flatSpec)
 	if err != nil {
-		log.WithError(err).WithField("spec", flatSpec).Error("Failed to get " +
-			"expected containers from spec")
-		return err
+		return fmt.Errorf("failed to query spec containers: %s", err.Error())
 	}
 
 	expCounts := map[string]int{}
@@ -226,8 +237,7 @@ func timeStitch(flatSpec, name, outputFile string,
 
 	log.Infof("Running %s stitch", name)
 	if err := localClient.RunStitch(flatSpec); err != nil {
-		log.WithError(err).Error("Failed to run stitch")
-		return err
+		return fmt.Errorf("failed to run spec: %s", err.Error())
 	}
 
 	utc, _ := time.LoadLocation("UTC")
@@ -235,24 +245,21 @@ func timeStitch(flatSpec, name, outputFile string,
 
 	_, workerIPs, err := tools.GetMachineIPs(localClient)
 	if err != nil {
-		log.WithError(err).Error("Failed to get worker IPs")
-		return err
+		return fmt.Errorf("failed to get machine IPs: %s", err.Error())
 	}
 
 	log.Info("Waiting for containers to boot")
 	err = tools.WaitForShutdown(tools.ContainersBooted(workerIPs, expCounts),
 		bootLimit)
 	if err != nil {
-		log.WithError(err).Error("Scale testing timed out")
-		return err
+		return fmt.Errorf("failed to boot containers: %s", err.Error())
 	}
 	log.Info("Containers successfully booted")
 
 	log.Info("Gathering timestamps")
 	endTimestamp, err := tools.GetLastTimestamp(workerIPs, time.Hour)
 	if err != nil {
-		log.WithError(err).Error("Fail to collect timestamps")
-		return err
+		return fmt.Errorf("failed to gather timestamps: %s", err.Error())
 	}
 
 	bootTime := endTimestamp.Sub(startTimestamp)
