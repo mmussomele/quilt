@@ -183,7 +183,7 @@ func main() {
 	// When running multiple scale tester instances back to back, if we don't wait
 	// for old containers to shutdown we get bad times
 	log.Info("Waiting for (potential) old containers to shut down")
-	err = tools.WaitForShutdown(cleanupReq, tools.ContainersBooted(workerIPs,
+	err = tools.WaitForShutdown(tools.ContainersBooted(workerIPs,
 		map[string]int{}), bootLimit)
 	if err != nil {
 		log.WithError(err).Error("Containers took too long to shut down")
@@ -254,8 +254,8 @@ func timeStitch(flatSpec, name, outputFile string,
 	}
 
 	log.Info("Waiting for containers to boot")
-	err = tools.WaitForShutdown(cleanReq,
-		tools.ContainersBooted(workerIPs, expCounts), bootLimit)
+	err = tools.WaitForShutdown(tools.ContainersBooted(workerIPs, expCounts),
+		bootLimit)
 	if err != nil {
 		log.WithError(err).Error("Scale testing timed out")
 		return err
