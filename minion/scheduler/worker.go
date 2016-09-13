@@ -56,19 +56,19 @@ func syncWorker(dk docker.Client, dbcs []db.Container,
 		}
 	}
 
+	// Queue up all the db containers to be started
+	dbcChannel := make(chan db.Container, len(dbci))
+	for _, i := range dbci {
+		dbcChannel <- i.(db.Container)
+	}
+	close(dbcChannel)
+
 	// Start a bunch of goroutines listening for db.Containers
-	dbcChannel := make(chan db.Container)
 	pairChannels := []chan join.Pair{}
 	for i := 0; i < dockerRunGoroutineLimit; i++ {
 		pairChannels = append(pairChannels, dockerRun(dk, dbcChannel))
 	}
 	pairOutput := merge(pairChannels)
-
-	// Send a bunch of db.Containers to the previously started goroutines
-	for _, i := range dbci {
-		dbcChannel <- i.(db.Container)
-	}
-	close(dbcChannel)
 
 	// Collect the results of booting the docker containers
 	for p := range pairOutput {
