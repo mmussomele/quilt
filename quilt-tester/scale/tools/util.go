@@ -46,21 +46,23 @@ func shouldShutdown() bool {
 
 // WaitForShutdown waits for either pred to return true, a shutdown signal or timeout. An
 // error is returned in either of the latter two cases.
-func WaitForShutdown(cleanReq CleanupRequest, pred func() bool,
-	timeout time.Duration) error {
-
-	cleanReq.Stop = true
-	cleanReq.ExitCode = 2
-	cleanReq.Message = "received error shutdown signal"
-	shutDownPred := func() bool {
+func WaitForShutdown(pred func() bool, timeout time.Duration) error {
+	timeoutChan := time.After(timeout)
+	for {
 		if shouldShutdown() {
-			Cleanup(cleanReq)
+			return errors.New("machines changed while waiting")
 		}
 
-		return pred()
+		select {
+		case <-timeoutChan:
+			return errors.New("timed out")
+		default:
+			if pred() {
+				return nil
+			}
+		}
+		time.Sleep(time.Second)
 	}
-
-	return util.WaitFor(shutDownPred, timeout)
 }
 
 // SSH returns an *exec.Cmd that will ssh into the given host and execute the command
