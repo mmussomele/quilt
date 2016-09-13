@@ -114,14 +114,25 @@ func main() {
 		os.Exit(1)
 	}
 
+	cleanupReq := tools.CleanupRequest{
+		Command:     cmd,
+		Namespace:   namespace,
+		LocalClient: localClient,
+		Stop:        true,
+		ExitCode:    1,
+		Message:     "timed out",
+	}
+
 	// Cleanup the scale tester if we're interrupted.
 	sigc := make(chan os.Signal, 1)
 	signal.Notify(sigc, os.Interrupt, os.Kill, syscall.SIGTERM, syscall.SIGHUP)
 	go func(c chan os.Signal) {
 		sig := <-c
 		fmt.Printf("Caught signal %s: shutting down.\n", sig)
-		tools.CleanupNoError(cmd, namespace, localClient, true)
-		os.Exit(0)
+		cleanReq := cleanupReq
+		cleanReq.ExitCode = 0
+		cleanReq.Message = "keyboard interrupt"
+		tools.Cleanup(cleanReq)
 	}(sigc)
 
 	// Load specs early so that we fail early if they aren't good
@@ -139,7 +150,7 @@ func main() {
 		cmd.Process.Kill()
 		os.Exit(1)
 	}
-	defer tools.CleanupError(cmd, namespace, localClient)
+	defer tools.Cleanup(cleanupReq)
 
 	err = testUtil.WaitFor(tools.MachinesBooted(localClient, ipOnly), 20*time.Minute)
 	if err != nil {
@@ -154,10 +165,13 @@ func main() {
 		return
 	}
 
+	// Listen for the machines in the db to change. If they do, signal a shutdown.
+	go tools.ListenForMachineChange(localClient)
+
 	// When running multiple scale tester instances back to back, if we don't wait
 	// for old containers to shutdown we get bad times
 	log.Info("Waiting for (potential) old containers to shut down")
-	err = testUtil.WaitFor(tools.ContainersBooted(workerIPs,
+	err = tools.WaitForShutdown(cleanupReq, tools.ContainersBooted(workerIPs,
 		map[string]int{}), bootLimit)
 	if err != nil {
 		log.WithError(err).Error("Containers took too long to shut down")
@@ -165,23 +179,37 @@ func main() {
 	}
 
 	err = swarmBoot(numContainers, image, "main",
-		outputFile, *appendFlag, localClient)
+		outputFile, *appendFlag, localClient, cleanupReq)
 	if err != nil {
+		if err == tools.ErrShutdown {
+			cleanupShutdown(err, cleanupReq)
+		}
 		return
 	}
 
 	err = swarmBoot(numContainers+1, image, "+1",
-		outputFile, *appendFlag, localClient)
+		outputFile, *appendFlag, localClient, cleanupReq)
+	if err != nil {
+		if err == tools.ErrShutdown {
+			cleanupShutdown(err, cleanupReq)
+		}
+		return
+	}
+
+	err = swarmKill(localClient)
 	if err != nil {
 		return
 	}
 
-	swarmKill(localClient)
-	tools.CleanupNoError(cmd, namespace, localClient, stopMachines)
+	cleanupReq.ExitCode = 0
+	cleanupReq.Message = "exiting normally"
+	cleanupReq.Stop = stopMachines
+	tools.Cleanup(cleanupReq)
 }
 
-func swarmBoot(containers int, image, name, outputFile string,
-	appendData bool, localClient client.Client) error {
+func swarmBoot(containers int, image, name,
+	outputFile string, appendData bool,
+	localClient client.Client, cleanupReq tools.CleanupRequest) error {
 
 	// Gather information on the expected state of the system from the main stitch
 	expCounts := map[string]int{image: containers}
@@ -229,7 +257,8 @@ func swarmBoot(containers int, image, name, outputFile string,
 	}
 
 	log.Info("Waiting for containers to boot")
-	err = testUtil.WaitFor(tools.ContainersBooted(workerIPs, expCounts), bootLimit)
+	err = tools.WaitForShutdown(cleanupReq, tools.ContainersBooted(workerIPs,
+		expCounts), bootLimit)
 	if err != nil {
 		log.WithError(err).Error("Scale testing timed out")
 		return err
@@ -256,6 +285,13 @@ func swarmBoot(containers int, image, name, outputFile string,
 
 	log.Infof("Took %v to boot %d containers.", bootTime, numContainers)
 	return nil
+}
+
+func cleanupShutdown(err error, cleanReq tools.CleanupRequest) {
+	cleanReq.ExitCode = 2
+	cleanReq.Message = err.Error()
+	cleanReq.Stop = true
+	tools.Cleanup(cleanReq)
 }
 
 func swarmKill(localClient client.Client) error {
