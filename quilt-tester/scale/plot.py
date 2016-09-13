@@ -30,7 +30,6 @@ scale -preboot-stitch={0}.tmp \
 -log-file={3} \
 -quilt-log-file={4} \
 -append -nostop \
--namespace=matt-scale-dev
 """
 # -postboot-stitch={2}.tmp \
 
@@ -41,7 +40,6 @@ swarm -preboot-stitch={0}.tmp \
 -out-file={3} \
 -log-file={4} \
 -append -nostop \
--namespace=matt-scale-dev
 """
 
 DEFAULT_CMD = SCALE_CMD.format(PREBOOT_SPEC, BOOT_SPEC, OUT_FILE + ".disconnect", LOG_FILE, LOG_FILE + "-quilt")
@@ -74,6 +72,7 @@ def make_swarm_process(count, image, arg):
     return subprocess.Popen(shlex.split(swarm_cmd_formatted + arg))
 
 def run_process(proc, count, opt, arg):
+    format_specs(count)
     while True:
         process = proc(count, opt, arg)
         try:
@@ -89,22 +88,18 @@ def run_process(proc, count, opt, arg):
             time.sleep(90) # wait to allow the process to finish its own shutdown
             sys.exit(0)
 
-def run_test(count, run_all, image, arg=""):
-    format_specs(count)
-    run_process(make_scale_process, count, False, arg) # always run the disconnected test
-    if not run_all:
-        return
-    #run_process(make_scale_process, count, True, "-ip-only") # run the full mesh test
+def run_test(count, image, arg=""):
+    run_process(make_scale_process, count, True, "-ip-only") # run the full mesh test
     run_process(make_swarm_process, count, image, "-ip-only")
 
 def run_scale(args):
     options = run_parser().parse_args(args)
     bootcounts = exp_iter(options.start, options.factor)
-    run_test(1, False, "") # boot one container to ensure that the machines are fully booted
+    run_process(make_scale_process, 1, False, "")
     if os.path.exists(LOG_FILE):
         os.remove(LOG_FILE)
     for count in bootcounts:
-        run_test(count, True, options.image, "-ip-only")
+        run_test(count, options.image, "-ip-only")
 
 def run(args):
     prog_name = args[0]
