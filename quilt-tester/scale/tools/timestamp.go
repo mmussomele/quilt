@@ -12,7 +12,28 @@ import (
 )
 
 // GetLastTimestamp gets the latest timestamp to be output by a non-quilt container.
-func GetLastTimestamp(workers []string) time.Time {
+func GetLastTimestamp(workers []string, timeLimit time.Duration) (time.Time, error) {
+	timestamp := make(chan time.Time)
+	go collectTimestamps(workers, timestamp)
+	timeout := time.After(timeLimit)
+	for {
+		if shouldShutdown() {
+			return time.Time{}, ErrShutdown
+		}
+
+		select {
+		case time := <-timestamp:
+			return time, nil
+		case <-timeout:
+			return time.Time{}, ErrTimeout
+		default:
+		}
+
+		time.Sleep(time.Second)
+	}
+}
+
+func collectTimestamps(workers []string, output chan time.Time) {
 	// Everything is after the zero time
 	latestTimestamp := time.Time{}
 	containers := GetContainers(workers)
@@ -43,7 +64,7 @@ func GetLastTimestamp(workers []string) time.Time {
 	}
 	fmt.Print("                                  \r")
 
-	return latestTimestamp
+	output <- latestTimestamp
 }
 
 // When querying timestamps, we can only have one ssh connection to each host at a time,
