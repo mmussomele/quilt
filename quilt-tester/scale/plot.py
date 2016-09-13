@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 
 import argparse
-from functools import reduce
 import os
 import os.path
-import signal
 import shlex
 import subprocess
 import sys
@@ -28,11 +26,13 @@ LOG_FILE = "./tmp/scale-logs"
 SCALE_CMD = """\
 scale -preboot-stitch={0}.tmp \
 -stitch={1}.tmp \
--postboot-stitch={2}.tmp \
--out-file={3} \
--log-file={4} \
+-out-file={2} \
+-log-file={3} \
+-quilt-log-file={4} \
 -append -nostop \
 """
+# -postboot-stitch={2}.tmp \
+
 SWARM_CMD = """\
 swarm -preboot-stitch={0}.tmp \
 -image={1} \
@@ -42,14 +42,14 @@ swarm -preboot-stitch={0}.tmp \
 -append -nostop \
 """
 
-DEFAULT_CMD = SCALE_CMD.format(PREBOOT_SPEC, BOOT_SPEC, POSTBOOT_SPEC, OUT_FILE + ".disconnect", LOG_FILE)
-FULL_MESH_CMD = SCALE_CMD.format(PREBOOT_SPEC, FULL_MESH_BOOT_SPEC, FULL_MESH_POST_SPEC, OUT_FILE + ".connected", LOG_FILE)
+DEFAULT_CMD = SCALE_CMD.format(PREBOOT_SPEC, BOOT_SPEC, OUT_FILE + ".disconnect", LOG_FILE, LOG_FILE + "-quilt")
+FULL_MESH_CMD = SCALE_CMD.format(PREBOOT_SPEC, FULL_MESH_BOOT_SPEC, OUT_FILE + ".connected", LOG_FILE, LOG_FILE + "-quilt")
 
 def stop_namespace():
     quilt = subprocess.Popen(shlex.split("quilt daemon"))
     quilt_stop = subprocess.Popen(shlex.split("quilt stop {0}".format(NAMESPACE)))
-    time.sleep(120)
     quilt_stop.wait()
+    time.sleep(120)
     quilt.terminate()
 
 def exp_iter(start, factor):
@@ -72,9 +72,9 @@ def make_swarm_process(count, image, arg):
     return subprocess.Popen(shlex.split(swarm_cmd_formatted + arg))
 
 def run_process(proc, count, opt, arg):
-    try:
-        while True:
-            process = proc(count, opt, arg)
+    while True:
+        process = proc(count, opt, arg)
+        try:
             arg = ""
             returncode = process.wait()
             if returncode != 0:
@@ -82,10 +82,10 @@ def run_process(proc, count, opt, arg):
                 stop_namespace() # stop the namespace so things restart
             else:
                 return
-    except KeyboardInterrupt:
-        process.terminate()
-        time.sleep(90) # wait to allow the process to finish its own shutdown
-        sys.exit(0)
+        except KeyboardInterrupt:
+            process.terminate()
+            time.sleep(90) # wait to allow the process to finish its own shutdown
+            sys.exit(0)
 
 def run_test(count, run_all, image, arg=""):
     format_specs(count)
@@ -111,3 +111,5 @@ def run(args):
 
 if __name__ == '__main__':
     run(sys.argv)
+
+
