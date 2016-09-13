@@ -31,6 +31,18 @@ Machine.prototype.withRole = function(role) {
     return copy;
 };
 
+Machine.prototype.withProvider = function(provider) {
+    var copy = this.clone();
+    copy.provider = provider;
+    return copy;
+};
+
+Machine.prototype.withRegion = function(region) {
+    var copy = this.clone();
+    copy.region = region;
+    return copy;
+};
+
 function MachineRule(exclusive, optionalArgs) {
     this.exclusive = exclusive;
     if (optionalArgs.provider) {
@@ -209,6 +221,12 @@ function deployWorkers(n, machine) {
 
 function place(tgt, rule) {
     ctx.placements.push(new Placement(tgt, rule));
+}
+
+function placeAll(tgts, rule) {
+    for (var i = 0 ; i < tgts.length ; i++) {
+        place(tgts[i], rule);
+    }
 }
 
 function setAdminACL(acl) {
