@@ -1,6 +1,8 @@
 package scheduler
 
 import (
+	"sync"
+
 	"github.com/NetSys/quilt/db"
 	"github.com/NetSys/quilt/join"
 	"github.com/NetSys/quilt/minion/docker"
@@ -11,6 +13,7 @@ import (
 const labelKey = "quilt"
 const labelValue = "scheduler"
 const labelPair = labelKey + "=" + labelValue
+const dockerRunGoroutineLimit = 32
 
 func runWorker(conn db.Conn, dk docker.Client, myIP string) {
 	if myIP == "" {
@@ -53,34 +56,23 @@ func syncWorker(dk docker.Client, dbcs []db.Container,
 		}
 	}
 
+	// Start a bunch of goroutines listening for db.Containers
+	dbcChannel := make(chan db.Container)
+	pairChannels := []chan join.Pair{}
+	for i := 0; i < dockerRunGoroutineLimit; i++ {
+		pairChannels = append(pairChannels, dockerRun(dk, dbcChannel))
+	}
+	pairOutput := merge(pairChannels)
+
+	// Send a bunch of db.Containers to the previously started goroutines
 	for _, i := range dbci {
-		dbc := i.(db.Container)
+		dbcChannel <- i.(db.Container)
+	}
+	close(dbcChannel)
 
-		log.WithField("container", dbc).Info("Start container")
-		id, err := dk.Run(docker.RunOptions{
-			Image:  dbc.Image,
-			Args:   dbc.Command,
-			Env:    dbc.Env,
-			Labels: map[string]string{labelKey: labelValue},
-		})
-		if err != nil {
-			log.WithFields(log.Fields{
-				"error":     err,
-				"container": dbc,
-			}).WithError(err).Warning("Failed to run container", dbc)
-			continue
-		}
-
-		dkc, err := dk.Get(id)
-		if err != nil {
-			log.WithFields(log.Fields{
-				"error":     err,
-				"container": dbc,
-			}).WithError(err).Warning("Failed to get container", dbc)
-			continue
-		}
-
-		pairs = append(pairs, join.Pair{L: dbc, R: dkc})
+	// Collect the results of booting the docker containers
+	for p := range pairOutput {
+		pairs = append(pairs, p)
 	}
 
 	for _, pair := range pairs {
@@ -97,6 +89,68 @@ func syncWorker(dk docker.Client, dbcs []db.Container,
 	return changed
 }
 
+func dockerRun(dk docker.Client, in chan db.Container) chan join.Pair {
+	out := make(chan join.Pair)
+	go func() {
+		defer close(out)
+		for dbc := range in {
+			log.WithField("container", dbc).Info("Start container")
+			id, err := dk.Run(docker.RunOptions{
+				Image:  dbc.Image,
+				Args:   dbc.Command,
+				Env:    dbc.Env,
+				Labels: map[string]string{labelKey: labelValue},
+			})
+			if err != nil {
+				log.WithFields(log.Fields{
+					"error":     err,
+					"container": dbc,
+				}).WithError(err).Warning("Failed to run container", dbc)
+				continue
+			}
+
+			dkc, err := dk.Get(id)
+			if err != nil {
+				log.WithFields(log.Fields{
+					"error":     err,
+					"container": dbc,
+				}).WithError(err).Warning("Failed to get container", dbc)
+				continue
+			}
+
+			out <- join.Pair{L: dbc, R: dkc}
+		}
+	}()
+
+	return out
+}
+
+func merge(channels []chan join.Pair) chan join.Pair {
+	var wg sync.WaitGroup
+	out := make(chan join.Pair)
+
+	wg.Add(len(channels))
+	go func() {
+		wg.Wait()
+		close(out)
+	}()
+
+	collect := func(vals chan join.Pair) {
+		for val := range vals {
+			out <- val
+		}
+		wg.Done()
+	}
+
+	for _, c := range channels {
+		go collect(c)
+	}
+
+	return out
+}
+
+// TODO: Find a way to turn this into a HashJoin
+//	- Maybe join on cmd1, then cmd2 and then join on those?
 func syncJoinScore(left, right interface{}) int {
 	dbc := left.(db.Container)
 	dkc := right.(docker.Container)
