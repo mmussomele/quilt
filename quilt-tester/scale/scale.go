@@ -235,7 +235,11 @@ func timeStitch(flatSpec, name, outputFile string,
 	log.Info("Containers successfully booted")
 
 	log.Info("Gathering timestamps")
-	endTimestamp := tools.GetLastTimestamp(workerIPs)
+	endTimestamp, err := tools.GetLastTimestamp(workerIPs, time.Hour)
+	if err != nil {
+		log.WithError(err).Error("Fail to collect timestamps")
+		return err
+	}
 
 	bootTime := endTimestamp.Sub(startTimestamp)
 	numContainers := strconv.Itoa(len(expectedContainers))
