@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -15,6 +16,52 @@ import (
 
 	log "github.com/Sirupsen/logrus"
 )
+
+var (
+	done     = make(chan struct{}, 1)
+	shutdown = false
+
+	// ErrTimeout is a timeout error
+	ErrTimeout = errors.New("timed out")
+	// ErrShutdown is an error returned when a shutdown signal was received
+	ErrShutdown = errors.New("received shutdown command")
+)
+
+func alertShutdown() {
+	select {
+	case done <- struct{}{}:
+	default: // Already a shutdown signal in queue, no need for another
+	}
+}
+
+func shouldShutdown() bool {
+	select {
+	case <-done:
+		shutdown = true
+	default:
+	}
+
+	return shutdown
+}
+
+// WaitForShutdown waits for either pred to return true, a shutdown signal or timeout. An
+// error is returned in either of the latter two cases.
+func WaitForShutdown(cleanReq CleanupRequest, pred func() bool,
+	timeout time.Duration) error {
+
+	cleanReq.Stop = true
+	cleanReq.ExitCode = 2
+	cleanReq.Message = "received error shutdown signal"
+	shutDownPred := func() bool {
+		if shouldShutdown() {
+			Cleanup(cleanReq)
+		}
+
+		return pred()
+	}
+
+	return util.WaitFor(shutDownPred, timeout)
+}
 
 // SSH returns an *exec.Cmd that will ssh into the given host and execute the command
 // described by the command parameter.
@@ -72,25 +119,23 @@ func GetIPMap(localClient client.Client) (map[string]string, error) {
 	return ipMap, nil
 }
 
-// CleanupError cleans up the scale tester when it fails with an error.
-func CleanupError(cmd *exec.Cmd, namespace string, lc client.Client) {
-	// On error, always stop namespace and exit with code 1
-	cleanup(cmd, namespace, lc, true, 1)
+// CleanupRequest holds fields needed to properly clean up the scale tester state.
+type CleanupRequest struct {
+	Command     *exec.Cmd
+	Namespace   string
+	LocalClient client.Client
+	Stop        bool
+	ExitCode    int
+	Message     string
 }
 
-// CleanupNoError cleans up the scale tester when it fails without an error.
-func CleanupNoError(cmd *exec.Cmd, namespace string, lc client.Client, stop bool) {
-	cleanup(cmd, namespace, lc, stop, 0)
-}
-
-func cleanup(cmd *exec.Cmd, namespace string,
-	localClient client.Client, stopMachines bool, exitCode int) {
-
+// Cleanup cleans up the scale tester state and reports any errors encountered.
+func Cleanup(request CleanupRequest) {
 	log.Info("Cleaning up scale tester state")
-	defer os.Exit(exitCode)
+	defer os.Exit(request.ExitCode)
 
 	// Post to slack if the scale tester exited with an error
-	if exitCode != 0 {
+	if request.ExitCode != 0 {
 		user, err := user.Current()
 		if err != nil {
 			log.WithError(err).Error("Failed to get current user")
@@ -104,8 +149,8 @@ func cleanup(cmd *exec.Cmd, namespace string,
 			return
 		}
 
-		pretext := "<@mmussomele> The scale tester needs help."
-		slackPost := util.ToPost(true, "quilt-testing", pretext, "")
+		pretext := "<@mmussomele> The scale tester encounter an error."
+		slackPost := util.ToPost(true, "quilt-testing", pretext, request.Message)
 		err = util.Slack(slackHook, slackPost)
 		if err != nil {
 			log.WithError(err).Error("Failed to post to slack")
@@ -114,11 +159,11 @@ func cleanup(cmd *exec.Cmd, namespace string,
 
 	// Attempt to use the current quilt daemon to stop the namespace, then kill the
 	// quilt daemon regardless of success.
-	if stopMachines {
-		stop(namespace, localClient)
+	if request.Stop {
+		stop(request.Namespace, request.LocalClient)
 	}
-	localClient.Close()
-	cmd.Process.Kill()
+	request.LocalClient.Close()
+	request.Command.Process.Kill()
 
 	// Occasionally the quilt daemon doesn't clean up the socket for some reason.
 	// TODO: Investigate why
@@ -140,4 +185,52 @@ func stop(namespace string, localClient client.Client) {
 
 	log.Info("Waiting for machines to shutdown")
 	time.Sleep(time.Minute)
+}
+
+// ListenForMachineChange listens for the machines in the localClient to change. If they
+// do, it signals a shutdown.
+func ListenForMachineChange(localClient client.Client) {
+	originalMachines, err := localClient.QueryMachines()
+	if err != nil {
+		log.WithError(err).Error("Failed to get db machines")
+		alertShutdown()
+		return
+	}
+
+	for {
+		time.Sleep(time.Minute)
+		currentMachines, err := localClient.QueryMachines()
+		if err != nil {
+			continue
+		}
+
+		if machinesChanged(originalMachines, currentMachines) {
+			alertShutdown()
+			return
+		}
+	}
+}
+
+func machinesChanged(oldMachines []db.Machine, newMachines []db.Machine) bool {
+	oldSet := map[int]struct{}{}
+	newSet := map[int]struct{}{}
+
+	for _, m := range oldMachines {
+		oldSet[m.ID] = struct{}{}
+	}
+	for _, m := range newMachines {
+		newSet[m.ID] = struct{}{}
+	}
+
+	if len(oldSet) != len(newSet) {
+		return true
+	}
+
+	for id := range oldSet {
+		if _, ok := newSet[id]; !ok {
+			return true
+		}
+	}
+
+	return false
 }

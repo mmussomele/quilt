@@ -104,14 +104,25 @@ func main() {
 		os.Exit(1)
 	}
 
+	cleanupReq := tools.CleanupRequest{
+		Command:     cmd,
+		Namespace:   namespace,
+		LocalClient: localClient,
+		Stop:        true,
+		ExitCode:    1,
+		Message:     "timed out",
+	}
+
 	// Cleanup the scale tester if we're interrupted.
 	sigc := make(chan os.Signal, 1)
 	signal.Notify(sigc, os.Interrupt, os.Kill, syscall.SIGTERM, syscall.SIGHUP)
 	go func(c chan os.Signal) {
 		sig := <-c
 		fmt.Printf("Caught signal %s: shutting down.\n", sig)
-		tools.CleanupNoError(cmd, namespace, localClient, true)
-		os.Exit(0)
+		cleanReq := cleanupReq
+		cleanReq.ExitCode = 0
+		cleanReq.Message = "keyboard interrupt"
+		tools.Cleanup(cleanReq)
 	}(sigc)
 
 	// Load specs early so that we fail early if they aren't good
@@ -151,7 +162,7 @@ func main() {
 		cmd.Process.Kill()
 		os.Exit(1)
 	}
-	defer tools.CleanupError(cmd, namespace, localClient)
+	defer tools.Cleanup(cleanupReq)
 
 	err = testUtil.WaitFor(tools.MachinesBooted(localClient, ipOnly), 10*time.Minute)
 	if err != nil {
@@ -166,36 +177,52 @@ func main() {
 		return
 	}
 
+	// Listen for the machines in the db to change. If they do, signal a shutdown.
+	go tools.ListenForMachineChange(localClient)
+
 	// When running multiple scale tester instances back to back, if we don't wait
 	// for old containers to shutdown we get bad times
 	log.Info("Waiting for (potential) old containers to shut down")
-	err = testUtil.WaitFor(tools.ContainersBooted(workerIPs,
+	err = tools.WaitForShutdown(cleanupReq, tools.ContainersBooted(workerIPs,
 		map[string]int{}), bootLimit)
 	if err != nil {
 		log.WithError(err).Error("Containers took too long to shut down")
 		return
 	}
 
-	err = timeStitch(flatSpec, "main", outputFile, *appendFlag, localClient)
+	err = timeStitch(flatSpec, "main", outputFile,
+		*appendFlag, localClient, cleanupReq)
 	if err != nil {
+		if err == tools.ErrShutdown {
+			cleanupShutdown(err, cleanupReq)
+		}
 		return
 	}
+
+	cleanupReq.ExitCode = 0
+	cleanupReq.Message = "exiting normally"
+	cleanupReq.Stop = stopMachines
 
 	// If we aren't running a post boot timing test, just exit
 	if flatPostSpec == "" {
-		tools.CleanupNoError(cmd, namespace, localClient, stopMachines)
+		tools.Cleanup(cleanupReq)
 	}
 
-	err = timeStitch(flatPostSpec, "+1", outputFile, *appendFlag, localClient)
+	err = timeStitch(flatPostSpec, "+1", outputFile,
+		*appendFlag, localClient, cleanupReq)
 	if err != nil {
+		if err == tools.ErrShutdown {
+			cleanupShutdown(err, cleanupReq)
+		}
 		return
 	}
 
-	tools.CleanupNoError(cmd, namespace, localClient, stopMachines)
+	tools.Cleanup(cleanupReq)
 }
 
 func timeStitch(flatSpec, name, outputFile string,
-	appendData bool, localClient client.Client) error {
+	appendData bool, localClient client.Client,
+	cleanReq tools.CleanupRequest) error {
 
 	// Gather information on the expected state of the system from the main stitch
 	log.Infof("Querying %s stitch containers", name)
@@ -227,7 +254,8 @@ func timeStitch(flatSpec, name, outputFile string,
 	}
 
 	log.Info("Waiting for containers to boot")
-	err = testUtil.WaitFor(tools.ContainersBooted(workerIPs, expCounts), bootLimit)
+	err = tools.WaitForShutdown(cleanReq,
+		tools.ContainersBooted(workerIPs, expCounts), bootLimit)
 	if err != nil {
 		log.WithError(err).Error("Scale testing timed out")
 		return err
@@ -255,6 +283,13 @@ func timeStitch(flatSpec, name, outputFile string,
 
 	log.Infof("Took %v to boot %s containers.", bootTime, numContainers)
 	return nil
+}
+
+func cleanupShutdown(err error, cleanReq tools.CleanupRequest) {
+	cleanReq.ExitCode = 2
+	cleanReq.Message = err.Error()
+	cleanReq.Stop = true
+	tools.Cleanup(cleanReq)
 }
 
 func queryStitchContainers(spec string) ([]stitch.Container, error) {
