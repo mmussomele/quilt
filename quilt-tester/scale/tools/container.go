@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+
+	log "github.com/Sirupsen/logrus"
 )
 
 var defaultContainers = map[string]struct{}{
@@ -77,6 +79,70 @@ func mergeContainers(channels []chan ScaleContainer) chan ScaleContainer {
 	}()
 
 	collect := func(vals chan ScaleContainer) {
+		for val := range vals {
+			out <- val
+		}
+		wg.Done()
+	}
+
+	for _, c := range channels {
+		go collect(c)
+	}
+
+	return out
+}
+
+// KillContainers kills all non-quilt containers on the given minions.
+func KillContainers(minionList []string) error {
+	dockerRM := `docker rm -f %s`
+	containers := GetContainers(minionList)
+	removeCommands := map[string][]string{}
+	for _, container := range containers {
+		removeCommands[container.IP] = append(removeCommands[container.IP],
+			fmt.Sprintf(dockerRM, container.Name))
+	}
+
+	channels := []chan error{}
+	for host, cmds := range removeCommands {
+		channels = append(channels, killContainers(host, cmds))
+	}
+
+	out := mergeErrors(channels)
+	lastErr := error(nil)
+	for err := range out {
+		if err != nil {
+			log.WithError(err).Error("Failed to remove containers.")
+			lastErr = err
+		}
+	}
+
+	return lastErr
+}
+
+func killContainers(host string, cmds []string) chan error {
+	out := make(chan error)
+	log.Infof("Tearing down containers on host quilt@%s", host)
+	go func() {
+		defer close(out)
+		for _, cmd := range cmds {
+			out <- SSH(host, strings.Fields(cmd)...).Run()
+		}
+	}()
+
+	return out
+}
+
+func mergeErrors(channels []chan error) chan error {
+	var wg sync.WaitGroup
+	out := make(chan error)
+
+	wg.Add(len(channels))
+	go func() {
+		wg.Wait()
+		close(out)
+	}()
+
+	collect := func(vals chan error) {
 		for val := range vals {
 			out <- val
 		}
