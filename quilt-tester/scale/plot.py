@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import operator
 import os
 import os.path
 import shlex
@@ -9,9 +10,10 @@ import sys
 import time
 
 def run_parser():
-    parser = argparse.ArgumentParser(description="run the scale tests", usage="%(prog)s run [-h] [-start N] [-factor M]")
+    parser = argparse.ArgumentParser(description="run the scale tests")
+    parser.add_argument('--growth', default="exponential", type=str)
     parser.add_argument('--start', default=100, type=int)
-    parser.add_argument('--factor', default=1.5, type=float)
+    parser.add_argument('--modifier', default=1.5, type=float)
     parser.add_argument('--image', default='mmussomele/sleep', type=str)
     return parser
 
@@ -52,10 +54,10 @@ def stop_namespace():
     time.sleep(120)
     quilt.terminate()
 
-def exp_iter(start, factor):
+def iter(start, modifier, op):
     while True:
         yield int(start)
-        start *= factor
+        start = op(start, modifier)
 
 def format_specs(count):
     for spec in [PREBOOT_SPEC, FULL_MESH_BOOT_SPEC, FULL_MESH_POST_SPEC, BOOT_SPEC, POSTBOOT_SPEC]:
@@ -90,15 +92,22 @@ def run_process(proc, count, opt, arg):
 
 def run_test(count, image, arg=""):
     run_process(make_scale_process, count, True, "-ip-only") # run the full mesh test
-    run_process(make_swarm_process, count, image, "-ip-only")
+    # run_process(make_swarm_process, count, image, "-ip-only") # we're pretty fast, so don't worry about swarm for now
 
 def run_scale(args):
     options = run_parser().parse_args(args)
-    bootcounts = exp_iter(options.start, options.factor)
+    if options.growth == "exponential":
+        op = operator.mul
+    elif options.growth == "linear":
+        op = operator.add
+    else:
+        print("Unknown growth type: '{}'".format(options.growth))
+        sys.exit(1)
+
     run_process(make_scale_process, 1, False, "")
     if os.path.exists(LOG_FILE):
         os.remove(LOG_FILE)
-    for count in bootcounts:
+    for count in iter(options.start, options.modifier, op):
         run_test(count, options.image, "-ip-only")
 
 def run(args):
@@ -108,5 +117,3 @@ def run(args):
 
 if __name__ == '__main__':
     run(sys.argv)
-
-
