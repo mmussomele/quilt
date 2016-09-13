@@ -178,6 +178,8 @@ func main() {
 		return
 	}
 
+	log.Info("Giving machines an extra 5 minutes to startup [temp fix]")
+	//time.Sleep(5 * time.Minute)
 	err = swarmBoot(numContainers, image, "main",
 		outputFile, *appendFlag, localClient, cleanupReq)
 	if err != nil {
@@ -187,6 +189,7 @@ func main() {
 		return
 	}
 
+	/* We're ditching the +1 tests for now
 	err = swarmBoot(numContainers+1, image, "+1",
 		outputFile, *appendFlag, localClient, cleanupReq)
 	if err != nil {
@@ -195,10 +198,14 @@ func main() {
 		}
 		return
 	}
+	*/
 
 	err = swarmKill(localClient)
 	if err != nil {
-		return
+		cleanupReq.ExitCode = 0
+		cleanupReq.Message = "swarm failed to stop containrs, killing machines"
+		cleanupReq.Stop = true
+		tools.Cleanup(cleanupReq)
 	}
 
 	cleanupReq.ExitCode = 0
@@ -260,7 +267,7 @@ func swarmBoot(containers int, image, name,
 	err = tools.WaitForShutdown(tools.ContainersBooted(workerIPs,
 		expCounts), bootLimit)
 	if err != nil {
-		log.WithError(err).Error("Scale testing timed out")
+		log.WithError(err).Error("Swarm testing failed")
 		return err
 	}
 	log.Info("Containers successfully booted")
@@ -296,39 +303,20 @@ func cleanupShutdown(err error, cleanReq tools.CleanupRequest) {
 
 func swarmKill(localClient client.Client) error {
 	log.Info("Tearing down swarm containers")
-	masterIPs, workerIPs, err := tools.GetMachineIPs(localClient)
+	_, workerIPs, err := tools.GetMachineIPs(localClient)
 	if err != nil {
 		return err
 	}
 
-	if len(masterIPs) != 1 {
-		return fmt.Errorf("expected 1 master, found %d", len(masterIPs))
-	}
-	masterIP := masterIPs[0]
-
-	containers := tools.GetContainers(workerIPs)
-	publicPrivate, err := tools.GetIPMap(localClient)
-	if err != nil {
+	if err = tools.KillContainers(workerIPs); err != nil {
 		return err
 	}
 
-	joinCmdTemplate := `%s ; %s`
-	killContainerCmd := `swarm rm -f ip-%s/%s`
-	command := ""
-	for _, container := range containers {
-		// to teardown containers with swarm, we need their private IPs
-		privateIP := publicPrivate[container.IP]
-		privateIP = strings.Replace(privateIP, ".", "-", -1)
-		killCmd := fmt.Sprintf(killContainerCmd, privateIP, container.Name)
-		if command == "" {
-			command = killCmd
-		} else {
-			command = fmt.Sprintf(joinCmdTemplate, command, killCmd)
-		}
-	}
-
-	_, err = tools.SSH(masterIP, strings.Fields(command)...).Output()
+	log.Info("Waiting for swarm containers to shut down")
+	err = tools.WaitForShutdown(tools.ContainersBooted(workerIPs,
+		map[string]int{}), bootLimit)
 	if err != nil {
+		log.WithError(err).Error("Containers took too long to shut down")
 		return err
 	}
 
