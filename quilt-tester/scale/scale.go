@@ -5,9 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"os/signal"
 	"strconv"
-	"syscall"
 	"time"
 
 	"github.com/NetSys/quilt/api"
@@ -112,18 +110,6 @@ func main() {
 		ExitCode:    1,
 		Message:     "timed out",
 	}
-
-	// Cleanup the scale tester if we're interrupted.
-	sigc := make(chan os.Signal, 1)
-	signal.Notify(sigc, os.Interrupt, os.Kill, syscall.SIGTERM, syscall.SIGHUP)
-	go func(c chan os.Signal) {
-		sig := <-c
-		fmt.Printf("Caught signal %s: shutting down.\n", sig)
-		cleanReq := cleanupReq
-		cleanReq.ExitCode = 0
-		cleanReq.Message = "keyboard interrupt"
-		tools.Cleanup(cleanReq)
-	}(sigc)
 
 	// Load specs early so that we fail early if they aren't good
 	log.Info("Loading preboot stitch")
