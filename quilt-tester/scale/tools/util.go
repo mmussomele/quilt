@@ -129,38 +129,27 @@ type CleanupRequest struct {
 	Stop        bool
 	ExitCode    int
 	Message     string
+	Time        time.Time
 }
 
 // Cleanup cleans up the scale tester state and reports any errors encountered.
 func Cleanup(request CleanupRequest) {
-	log.Info("Cleaning up scale tester state")
 	defer os.Exit(request.ExitCode)
+
+	// Report a reasonable time if the caller forgot
+	if request.Time.IsZero() {
+		request.Time = time.Now()
+	}
 
 	// Post to slack if the scale tester exited with an error
 	if request.ExitCode != 0 {
-		user, err := user.Current()
-		if err != nil {
-			log.WithError(err).Error("Failed to get current user")
-			return
-		}
-
-		slackFile := filepath.Join(user.HomeDir, ".slack_hook")
-		slackHook, err := ReadFile(slackFile)
-		if err != nil {
-			log.WithError(err).Error("Failed to load slack hook URL")
-			return
-		}
-
-		pretext := "<@mmussomele> The scale tester encounter an error."
-		slackPost := util.ToPost(true, "quilt-testing", pretext, request.Message)
-		err = util.Slack(slackHook, slackPost)
-		if err != nil {
-			log.WithError(err).Error("Failed to post to slack")
-		}
+		log.Info("Posting error to slack")
+		slackError(request)
 	}
 
 	// Attempt to use the current quilt daemon to stop the namespace, then kill the
 	// quilt daemon regardless of success.
+	log.Info("Cleaning up scale tester state")
 	if request.Stop {
 		stop(request.Namespace, request.LocalClient)
 	}
@@ -171,6 +160,29 @@ func Cleanup(request CleanupRequest) {
 	// TODO: Investigate why
 	_, defaultSocket, _ := api.ParseListenAddress(api.DefaultSocket)
 	os.Remove(defaultSocket)
+}
+
+func slackError(request CleanupRequest) {
+	user, err := user.Current()
+	if err != nil {
+		log.WithError(err).Error("Failed to get current user")
+		return
+	}
+
+	slackFile := filepath.Join(user.HomeDir, ".slack_hook")
+	slackHook, err := ReadFile(slackFile)
+	if err != nil {
+		log.WithError(err).Error("Failed to load slack hook URL")
+		return
+	}
+
+	pretext := fmt.Sprintf("[%s] <@mmussomele> The scale tester encounter an error.",
+		request.Time.Format("Jan-02-2006 15:04:05"))
+	slackPost := util.ToPost(true, "quilt-testing", pretext, request.Message)
+	err = util.Slack(slackHook, slackPost)
+	if err != nil {
+		log.WithError(err).Error("Failed to post to slack")
+	}
 }
 
 // stop attempts to use the quilt client to stop the current namespace but makes no
