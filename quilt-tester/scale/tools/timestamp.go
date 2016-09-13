@@ -37,11 +37,17 @@ func collectTimestamps(workers []string, output chan time.Time) {
 	// Everything is after the zero time
 	latestTimestamp := time.Time{}
 	containers := GetContainers(workers)
-	containerCount := len(containers)
 
+	containerCount := 0
 	hostMap := map[string][]string{}
 	for _, container := range containers {
+		// Sometimes, containers show up in `docker ps` but don't start. This
+		// skips those containers when collecting timestamps
+		if !container.Started {
+			continue
+		}
 		hostMap[container.IP] = append(hostMap[container.IP], container.Name)
+		containerCount++
 	}
 
 	channels := []chan time.Time{}

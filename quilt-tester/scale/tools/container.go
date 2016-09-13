@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"regexp"
+	"strings"
 	"sync"
 )
 
@@ -18,9 +19,10 @@ var defaultContainers = map[string]struct{}{
 
 // ScaleContainer contains the IP, Image and Name of a container.
 type ScaleContainer struct {
-	IP    string
-	Image string
-	Name  string
+	IP      string
+	Image   string
+	Name    string
+	Started bool
 }
 
 // GetContainers fetches all of the current non-quilt containers from the workers.
@@ -89,18 +91,20 @@ func mergeContainers(channels []chan ScaleContainer) chan ScaleContainer {
 }
 
 func parseContainer(container []byte) (ScaleContainer, error) {
-	containersRegex := `[a-f0-9]+\s+(\S+)\s+".+"\s+(?:(?:\w+\s)+\s+){2}\s+([\w\-]+)`
+	containersRegex := `[a-f0-9]+\s+(\S+)\s+".+"\s+(?:\w+\s)+\s+` +
+		`((?:\w+\s)+\s+)\s+([\w\-]+)`
 	containerMatch := regexp.MustCompile(containersRegex)
 
 	groups := containerMatch.FindSubmatch(container)
-	if len(groups) != 3 {
+	if len(groups) != 4 {
 		return ScaleContainer{}, fmt.Errorf("malformed container: %s", container)
 	}
 
-	image, name := string(groups[1]), string(groups[2])
+	image, status, name := string(groups[1]), string(groups[2]), string(groups[3])
 	if _, ok := defaultContainers[name]; ok {
 		return ScaleContainer{}, fmt.Errorf("default container: %s", container)
 	}
 
-	return ScaleContainer{Image: image, Name: name}, nil
+	started := strings.HasPrefix(status, "Up ")
+	return ScaleContainer{Image: image, Name: name, Started: started}, nil
 }
