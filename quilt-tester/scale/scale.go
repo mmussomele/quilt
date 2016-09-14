@@ -65,6 +65,7 @@ func main() {
 	nostopFlag := flag.Bool("nostop", false, "if given, don't try to stop machines")
 	ipOnlyFlag := flag.Bool("ip-only", false, "if given, only wait for machines to"+
 		" get public IPs")
+	debugFlag := flag.Bool("debug", false, "if given, run in debug mode")
 	flag.Parse()
 
 	if *prebootFlag == "" {
@@ -89,9 +90,15 @@ func main() {
 	defer logFile.Close()
 	log.SetOutput(logFile)
 
-	log.Info("Starting the quilt daemon.")
+	quiltLogLevel := "info"
+	if *debugFlag {
+		quiltLogLevel = "debug"
+	}
+	quiltLogLevel = fmt.Sprintf("-log-level=%s", quiltLogLevel)
 	quiltLogFile := fmt.Sprintf("-log-file=%s", *quiltLogFlag)
-	cmd := exec.Command("quilt", quiltLogFile, "daemon")
+
+	log.Info("Starting the quilt daemon.")
+	cmd := exec.Command("quilt", quiltLogFile, quiltLogLevel, "daemon")
 	if err := cmd.Start(); err != nil {
 		log.WithError(err).Fatal("Failed to start quilt")
 	}
@@ -126,14 +133,16 @@ func main() {
 		Message:     "",
 	}
 
-	if err := runScale(params); err != nil {
+	err = runScale(params)
+	if err != nil {
 		log.WithError(err).Error("The scale tester exited with an error.")
-
 		cleanupRequest.Stop = true
 		cleanupRequest.ExitCode = 1
 		cleanupRequest.Message = err.Error()
 		cleanupRequest.Time = time.Now()
+	}
 
+	if err != nil || *debugFlag {
 		err = tools.SaveLogs(localClient, *quiltLogFlag, *logFlag)
 		if err != nil {
 			log.WithError(err).Error("Failed to save logs")
