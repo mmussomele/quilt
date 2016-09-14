@@ -65,6 +65,7 @@ func (pro *Prof) Stop() error {
 	if err != nil {
 		return fmt.Errorf("failed to create mem file: %s", err)
 	}
+	defer memFile.Close()
 
 	runtime.GC()
 	if err := pprof.WriteHeapProfile(memFile); err != nil {
