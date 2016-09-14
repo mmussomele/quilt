@@ -350,7 +350,7 @@ func TestGetLeaderClient(t *testing.T) {
 			return &mockClient{
 				etcdReturn: []db.Etcd{
 					{
-						LeaderIP: "leader-priv",
+						LeaderIP: "leader",
 					},
 				},
 			}, nil
@@ -473,7 +473,7 @@ func TestExec(t *testing.T) {
 				},
 				etcdReturn: []db.Etcd{
 					{
-						LeaderIP: "leader-priv",
+						LeaderIP: "leader",
 					},
 				},
 			}, nil
