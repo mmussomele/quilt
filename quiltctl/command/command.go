@@ -80,7 +80,7 @@ func getLeaderIP(localClient client.Client, daemonIP string) (string, error) {
 		return "", fmt.Errorf("no leader information on host %s", daemonIP)
 	}
 
-	return getPublicIP(localClient, etcds[0].LeaderIP)
+	return etcds[0].LeaderIP, nil
 }
 
 // Get the public IP of a machine given its private IP.
