@@ -13,6 +13,7 @@ import (
 	"github.com/NetSys/quilt/join"
 	"github.com/NetSys/quilt/minion/docker"
 	"github.com/NetSys/quilt/minion/ovsdb"
+	"github.com/NetSys/quilt/util"
 
 	log "github.com/Sirupsen/logrus"
 )
@@ -48,10 +49,14 @@ func Run(conn db.Conn, dk docker.Client) {
 		time.Sleep(5 * time.Second)
 	}
 
+	loopLog := util.NewLoopTimeLogger("Network")
 	for range conn.TriggerTick(30, db.MinionTable, db.ContainerTable,
 		db.ConnectionTable, db.LabelTable, db.EtcdTable).C {
+
+		loopLog.LogLoopStart()
 		runWorker(conn, dk)
 		runMaster(conn)
+		loopLog.LogLoopEnd()
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 
 	"github.com/NetSys/quilt/db"
 	"github.com/NetSys/quilt/minion/docker"
+	"github.com/NetSys/quilt/util"
 	log "github.com/Sirupsen/logrus"
 )
 
@@ -17,9 +18,11 @@ import (
 func Run(conn db.Conn, dk docker.Client) {
 	bootWait(conn)
 
+	loopLog := util.NewLoopTimeLogger("Scheduler")
 	trig := conn.TriggerTick(60, db.MinionTable, db.ContainerTable,
 		db.PlacementTable, db.EtcdTable).C
 	for range trig {
+		loopLog.LogLoopStart()
 		minion, err := conn.MinionSelf()
 		if err != nil {
 			log.WithError(err).Warn("Missing self in the minion table.")
@@ -31,6 +34,7 @@ func Run(conn db.Conn, dk docker.Client) {
 		} else if minion.Role == db.Master {
 			runMaster(conn)
 		}
+		loopLog.LogLoopEnd()
 	}
 }
 

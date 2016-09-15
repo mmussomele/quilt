@@ -13,6 +13,7 @@ import (
 	"github.com/NetSys/quilt/minion/pprofile"
 	"github.com/NetSys/quilt/minion/scheduler"
 	"github.com/NetSys/quilt/minion/supervisor"
+	"github.com/NetSys/quilt/util"
 
 	log "github.com/Sirupsen/logrus"
 )
@@ -34,7 +35,9 @@ func Run() {
 
 	go apiServer.Run(conn, fmt.Sprintf("tcp://0.0.0.0:%d", api.DefaultRemotePort))
 
+	loopLog := util.NewLoopTimeLogger("Minion-Update")
 	for range conn.Trigger(db.MinionTable).C {
+		loopLog.LogLoopStart()
 		conn.Transact(func(view db.Database) error {
 			minion, err := view.MinionSelf()
 			if err != nil {
@@ -44,6 +47,7 @@ func Run() {
 			updatePolicy(view, minion.Role, minion.Spec)
 			return nil
 		})
+		loopLog.LogLoopEnd()
 	}
 }
 
