@@ -143,10 +143,7 @@ func main() {
 	}
 
 	if err != nil || *debugFlag {
-		err = tools.SaveLogs(localClient, *quiltLogFlag, *logFlag, err != nil)
-		if err != nil {
-			log.WithError(err).Error("Failed to save logs")
-		}
+		tools.SaveLogs(localClient, *quiltLogFlag, *logFlag, err != nil)
 	}
 
 	tools.Cleanup(cleanupRequest)
