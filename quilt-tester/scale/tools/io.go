@@ -60,7 +60,7 @@ func WriteResults(path string, data []string, appendToFile bool) error {
 
 // SaveLogs copies the scale tester and quilt logs to a folder named by the current date
 // and time. It also copies the logs from each of the minions to that folder.
-func SaveLogs(localClient client.Client, quiltLog, scaleLog string, failed bool) error {
+func SaveLogs(localClient client.Client, quiltLog, scaleLog string, failed bool) {
 	now := time.Now().Format("Jan_02_2006-15.04.05")
 	status := "Success"
 	if failed {
@@ -69,7 +69,8 @@ func SaveLogs(localClient client.Client, quiltLog, scaleLog string, failed bool)
 
 	now = fmt.Sprintf("%s-%s", status, now)
 	if err := os.Mkdir(now, 0777); err != nil {
-		return err
+		log.WithError(err).Error("Failed to create log store directory")
+		return
 	}
 
 	quiltLogStore := filepath.Join(now, "quilt-logs")
@@ -82,9 +83,19 @@ func SaveLogs(localClient client.Client, quiltLog, scaleLog string, failed bool)
 		log.WithError(err).Error("Failed to copy scale logs")
 	}
 
+	// We don't want to lose logs made after storing the logs, so change the logger
+	// output location
+	newScaleLogFile, err := os.OpenFile(scaleLogStore, os.O_RDWR|os.O_APPEND, 0666)
+	if err != nil {
+		log.WithError(err).Error("Failed to open new scale log")
+	} else {
+		log.SetOutput(newScaleLogFile)
+	}
+
 	machines, err := localClient.QueryMachines()
 	if err != nil {
-		return err
+		log.WithError(err).Error("Failed to get machines to save logs")
+		return
 	}
 
 	for _, m := range machines {
@@ -94,21 +105,20 @@ func SaveLogs(localClient client.Client, quiltLog, scaleLog string, failed bool)
 		logs, err := SSH(m.PublicIP,
 			strings.Fields("docker logs minion")...).CombinedOutput()
 		if err != nil {
-			log.WithError(err).Errorf("Failed to get machine %d logs", m.ID)
+			log.WithError(err).Errorf("Failed to get machine %d log", m.ID)
 		}
 
 		outFile, err := os.OpenFile(logStore, os.O_WRONLY|os.O_CREATE, 0666)
 		if err != nil {
-			return err
+			log.WithError(err).Errorf("Failed to open log file: %s",
+				logStore)
 		}
 
 		_, err = outFile.Write(logs)
 		outFile.Close() // close no matter what happened
 
 		if err != nil {
-			return err
+			log.WithError(err).Errorf("Failed to write machine %d log", m.ID)
 		}
 	}
-
-	return nil
 }
