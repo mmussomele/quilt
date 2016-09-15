@@ -51,7 +51,7 @@ func (ltl *LoopTimeLogger) LogLoopStart() {
 
 	ltl.loopRunning = true
 	ltl.lastStart = time.Now()
-	log.Debugf("Starting %s trigger loop. It has been %v "+
+	log.Infof("Starting %s trigger loop. It has been %v "+
 		"since the last trigger.", ltl.loopname, ltl.lastStart.Sub(ltl.lastEnd))
 }
 
@@ -62,6 +62,6 @@ func (ltl *LoopTimeLogger) LogLoopEnd() {
 
 	ltl.loopRunning = false
 	ltl.lastEnd = time.Now()
-	log.Debugf("%s trigger loop ended. It took %v",
+	log.Infof("%s trigger loop ended. It took %v",
 		ltl.loopname, ltl.lastEnd.Sub(ltl.lastStart))
 }
