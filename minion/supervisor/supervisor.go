@@ -7,6 +7,7 @@ import (
 
 	"github.com/NetSys/quilt/db"
 	"github.com/NetSys/quilt/minion/docker"
+	"github.com/NetSys/quilt/util"
 
 	log "github.com/Sirupsen/logrus"
 )
@@ -77,8 +78,11 @@ func (sv *supervisor) runSystem() {
 		go sv.dk.Pull(image)
 	}
 
+	loopLog := util.NewLoopTimeLogger("Supervisor")
 	for range sv.conn.Trigger(db.MinionTable, db.EtcdTable).C {
+		loopLog.LogLoopStart()
 		sv.runSystemOnce()
+		loopLog.LogLoopEnd()
 	}
 }
 

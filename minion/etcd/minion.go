@@ -6,6 +6,7 @@ import (
 
 	"github.com/NetSys/quilt/db"
 	"github.com/NetSys/quilt/join"
+	"github.com/NetSys/quilt/util"
 
 	log "github.com/Sirupsen/logrus"
 )
@@ -13,9 +14,12 @@ import (
 const timeout = 30
 
 func runMinionSync(conn db.Conn, store Store) {
+	loopLog := util.NewLoopTimeLogger("Etcd")
 	for range conn.TriggerTick(timeout/2, db.MinionTable).C {
+		loopLog.LogLoopStart()
 		writeMinion(conn, store)
 		readMinion(conn, store)
+		loopLog.LogLoopEnd()
 	}
 }
 
