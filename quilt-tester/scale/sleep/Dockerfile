@@ -1,4 +1,5 @@
-From ubuntu
-RUN apt-get update && apt-get -y install iputils-ping
-Copy scale-sleep.sh /bin
-CMD ["/bin/sh", "/bin/scale-sleep.sh"]
+From alpine:3.1
+
+Copy scale-sleep.sh /scale-sleep.sh
+
+CMD ["/bin/sh", "/scale-sleep.sh"]
