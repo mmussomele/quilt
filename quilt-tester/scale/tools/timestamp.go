@@ -14,10 +14,12 @@ import (
 // GetLastTimestamp gets the latest timestamp to be output by a non-quilt container.
 func GetLastTimestamp(workers []string, timeLimit time.Duration) (time.Time, error) {
 	timestamp := make(chan time.Time)
-	go collectTimestamps(workers, timestamp)
+	done := make(chan struct{})
+	go collectTimestamps(workers, timestamp, done)
 	timeout := time.After(timeLimit)
 	for {
 		if shouldShutdown() {
+			done <- struct{}{}
 			return time.Time{}, ErrShutdown
 		}
 
@@ -25,6 +27,7 @@ func GetLastTimestamp(workers []string, timeLimit time.Duration) (time.Time, err
 		case time := <-timestamp:
 			return time, nil
 		case <-timeout:
+			done <- struct{}{}
 			return time.Time{}, ErrTimeout
 		default:
 		}
@@ -33,7 +36,7 @@ func GetLastTimestamp(workers []string, timeLimit time.Duration) (time.Time, err
 	}
 }
 
-func collectTimestamps(workers []string, output chan time.Time) {
+func collectTimestamps(workers []string, output chan time.Time, done chan struct{}) {
 	// Everything is after the zero time
 	latestTimestamp := time.Time{}
 	containers := GetContainers(workers)
@@ -59,17 +62,30 @@ func collectTimestamps(workers []string, output chan time.Time) {
 
 	timestampCount := 0
 	fmt.Printf("Collecting timestamps... (0.00%s)\r", "%") // go vet is dumb
-	for ts := range out {
-		if ts.After(latestTimestamp) {
-			latestTimestamp = ts
-		}
+Loop:
+	for {
+		select {
+		case <-done:
+			return
+		case ts := <-out:
+			// Since waiting for timestamps looks the same as a closed
+			// channel from a blocking perspective, we need an explicit
+			// signal that we're done.
+			if ts.IsZero() {
+				break Loop
+			}
 
-		timestampCount++
-		percComplete := 100 * float64(timestampCount) / float64(containerCount)
-		fmt.Printf("Collecting timestamps... (%.2f%%)\r", percComplete)
+			if ts.After(latestTimestamp) {
+				latestTimestamp = ts
+			}
+
+			timestampCount++
+			percComplete := float64(timestampCount) / float64(containerCount)
+			fmt.Printf("Collecting timestamps... (%.2f%%)\r",
+				100*percComplete)
+		}
 	}
 	fmt.Print("                                  \r")
-
 	output <- latestTimestamp
 }
 
@@ -128,6 +144,7 @@ func mergeTimestamps(channels []chan time.Time) chan time.Time {
 	wg.Add(len(channels))
 	go func() {
 		wg.Wait()
+		out <- time.Time{} // signal done
 		close(out)
 	}()
 
