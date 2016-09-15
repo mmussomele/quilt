@@ -60,9 +60,14 @@ func WriteResults(path string, data []string, appendToFile bool) error {
 
 // SaveLogs copies the scale tester and quilt logs to a folder named by the current date
 // and time. It also copies the logs from each of the minions to that folder.
-func SaveLogs(localClient client.Client, quiltLog, scaleLog string) error {
+func SaveLogs(localClient client.Client, quiltLog, scaleLog string, failed bool) error {
 	now := time.Now().Format("Jan_02_2006-15.04.05")
+	status := "Success"
+	if failed {
+		status = "Failed"
+	}
 
+	now = fmt.Sprintf("%s-%s", status, now)
 	if err := os.Mkdir(now, 0777); err != nil {
 		return err
 	}
