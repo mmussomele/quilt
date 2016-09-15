@@ -27,3 +27,41 @@ func (f Formatter) Format(entry *log.Entry) ([]byte, error) {
 	b.WriteByte('\n')
 	return b.Bytes(), nil
 }
+
+type LoopTimeLogger struct {
+	loopname    string
+	lastStart   time.Time
+	lastEnd     time.Time
+	loopRunning bool
+}
+
+func NewLoopTimeLogger(loopname string) *LoopTimeLogger {
+	return &LoopTimeLogger{
+		loopname:    loopname,
+		lastEnd:     time.Now(),
+		lastStart:   time.Time{},
+		loopRunning: false,
+	}
+}
+
+func (ltl *LoopTimeLogger) LogLoopStart() {
+	if ltl.loopRunning {
+		return
+	}
+
+	ltl.loopRunning = true
+	ltl.lastStart = time.Now()
+	log.Debugf("Starting %s trigger loop. It has been %v "+
+		"since the last trigger.", ltl.loopname, ltl.lastStart.Sub(ltl.lastEnd))
+}
+
+func (ltl *LoopTimeLogger) LogLoopEnd() {
+	if !ltl.loopRunning {
+		return
+	}
+
+	ltl.loopRunning = false
+	ltl.lastEnd = time.Now()
+	log.Debugf("%s trigger loop ended. It took %v",
+		ltl.loopname, ltl.lastEnd.Sub(ltl.lastStart))
+}
