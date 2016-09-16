@@ -123,6 +123,20 @@ func TestHashJoinUnHashableKey(t *testing.T) {
 	HashJoin(JoinList{10, 11, 12}, JoinList{10, 11, 12}, keyFunc, keyFunc)
 }
 
+func TestHashJoinShortRight(t *testing.T) {
+	pairs, left, right := HashJoin(JoinList{10, 11, 12},
+		JoinList{13, 11}, nil, nil)
+	if len(left) != 2 {
+		t.Error(spew.Sprintf("Unexpected left: %s", left))
+	}
+	if len(right) != 1 {
+		t.Error(spew.Sprintf("Unexpected right %s", right))
+	}
+	if !eq(pairs, []Pair{{11, 11}}) {
+		t.Error(spew.Sprintf("Unexpected pairs: %s", pairs))
+	}
+}
+
 func ExampleJoin() {
 	lefts := []string{"a", "bc", "def"}
 	rights := []int{0, 2, 4}
