@@ -27,10 +27,11 @@ import (
 )
 
 const (
-	nsPath    string = "/var/run/netns"
-	innerVeth string = "eth0"
-	loopback  string = "lo"
-	innerMTU  int    = 1400
+	nsPath           string = "/var/run/netns"
+	innerVeth        string = "eth0"
+	loopback         string = "lo"
+	innerMTU         int    = 1400
+	concurrencyLimit int    = 8 // Adjust to change per function goroutine limit
 )
 
 // This represents a network namespace
@@ -302,12 +303,20 @@ func updateVeths(containers []db.Container) {
 	log.Infof("Took %v to delete veths", time.Now().Sub(startTime))
 	startTime = time.Now()
 
+	// Adding veths takes a long time, so we do it concurrently
+	vethsChannel := make(chan netdev, len(rights))
 	for _, r := range rights {
-		if err := addVeth(r.(netdev)); err != nil {
-			log.WithError(err).Error("failed to add veth")
-			continue
-		}
+		vethsChannel <- r.(netdev)
 	}
+	close(vethsChannel)
+
+	var wg sync.WaitGroup
+	wg.Add(concurrencyLimit)
+	for i := 0; i < concurrencyLimit; i++ {
+		go addVeths(vethsChannel, &wg)
+	}
+	wg.Wait()
+
 	log.Infof("Took %v to add veths", time.Now().Sub(startTime))
 	startTime = time.Now()
 
@@ -318,6 +327,15 @@ func updateVeths(containers []db.Container) {
 		}
 	}
 	log.Infof("Took %v to mod veths", time.Now().Sub(startTime))
+}
+
+func addVeths(veths chan netdev, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for v := range veths {
+		if err := addVeth(v); err != nil {
+			log.WithError(err).Error("failed to add veth")
+		}
+	}
 }
 
 func generateTargetVeths(containers []db.Container) netdevSlice {
