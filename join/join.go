@@ -93,6 +93,24 @@ type List interface {
 func HashJoin(lSlice, rSlice List, lKey, rKey func(interface{}) interface{}) (
 	pairs []Pair, lonelyLefts, lonelyRights []interface{}) {
 
+	// If the rSlice is shorter than the lSlice, use the rSlice to create the
+	// reference hash table in order to save memory.
+	if rSlice.Len() < lSlice.Len() {
+		// Call hashJoin with swapped arguments, and swap the result back to
+		// the order the caller is expecting.
+		pairs, lonelyRights, lonelyLefts = hashJoin(rSlice, lSlice, rKey, lKey)
+		for i, p := range pairs {
+			pairs[i] = Pair{p.R, p.L}
+		}
+	} else {
+		pairs, lonelyLefts, lonelyRights = hashJoin(lSlice, rSlice, lKey, rKey)
+	}
+	return pairs, lonelyLefts, lonelyRights
+}
+
+func hashJoin(lSlice, rSlice List, lKey, rKey func(interface{}) interface{}) (
+	pairs []Pair, lonelyLefts, lonelyRights []interface{}) {
+
 	var identity = func(val interface{}) interface{} {
 		return val
 	}
