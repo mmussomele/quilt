@@ -840,10 +840,8 @@ func updateOpenFlow(dk docker.Client, odb ovsdb.Client, containers []db.Containe
 	log.Infof("Took %v to delete OFRules", time.Now().Sub(startTime))
 	startTime = time.Now()
 
-	for _, f := range flowsToAdd {
-		if err := addOFRule(dk, f.(OFRule)); err != nil {
-			log.WithError(err).Error("error adding OpenFlow flow")
-		}
+	if err := addOFRules(dk, flowsToAdd); err != nil {
+		log.WithError(err).Error("error adding OpenFlow flow")
 	}
 	log.Infof("Took %v to add OFRules", time.Now().Sub(startTime))
 }
@@ -1416,10 +1414,26 @@ func deleteRoute(namespace string, r route) error {
 	return nil
 }
 
-func addOFRule(dk docker.Client, flow OFRule) error {
-	args := fmt.Sprintf("ovs-ofctl add-flow %s %s,%s,actions=%s",
-		quiltBridge, flow.table, flow.match, flow.actions)
-	err := dk.Exec(supervisor.Ovsvswitchd, strings.Split(args, " ")...)
+func addOFRules(dk docker.Client, flows []interface{}) error {
+	flowCommands := []string{}
+	for _, f := range flows {
+		flow := f.(OFRule)
+		flowCommands = append(flowCommands, fmt.Sprintf("%s,%s,actions=%s",
+			flow.table, flow.match, flow.actions))
+	}
+	flowsString := strings.Join(flowCommands, "\n")
+
+	// add-flows can add all of our flows from a single file at one
+	flowsTempFile := fmt.Sprintf("/tmp/.wknet-OFadd.%s",
+		time.Now().Format("Jan_02_2006-15.04.05.000"))
+	err := ioutil.WriteFile(flowsTempFile, []byte(flowsString), 0666)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(flowsTempFile) // clean up the file when we're done
+
+	args := fmt.Sprintf("ovs-ofctl add-flows %s %s", quiltBridge, flowsTempFile)
+	err = dk.Exec(supervisor.Ovsvswitchd, strings.Split(args, " ")...)
 	if err != nil {
 		return err
 	}
