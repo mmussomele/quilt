@@ -365,6 +365,73 @@ func (ovsdb Client) DeleteACL(lswitch string, ovsdbACL Acl) error {
 	return errorCheck(results, 2)
 }
 
+type AddressSet struct {
+	Name      string
+	Addresses []string
+}
+
+func (ovsdb Client) ListAddressSets(lswitch string) ([]AddressSet, error) {
+	result := []AddressSet{}
+
+	addressReply, err := ovsdb.transact("OVN_Northbound", ovs.Operation{
+		Op:    "select",
+		Table: "Address_Set",
+		Where: noCondition(),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("transaction error: listing address sets on %s: %s",
+			lswitch, err)
+	}
+
+	for _, addr := range addressReply[0].Rows {
+		result = append(result, AddressSet{
+			Name:      addr["name"].(string),
+			Addresses: ovsStringSetToSlice(addr["addresses"]),
+		})
+	}
+	return result, nil
+}
+
+func (ovsdb Client) CreateAddressSet(lswitch string, name string, addresses []string) error {
+	addrs, err := ovs.NewOvsSet(addresses)
+	if err != nil {
+		return err
+	}
+
+	addressRow := map[string]interface{}{
+		"name":      name,
+		"addresses": addrs,
+	}
+
+	insertOp := ovs.Operation{
+		Op:    "insert",
+		Table: "Address_Set",
+		Row:   addressRow,
+	}
+
+	results, err := ovsdb.transact("OVN_Northbound", insertOp)
+	if err != nil {
+		return fmt.Errorf("transaction error: creating address set on %s: %s",
+			lswitch, err)
+	}
+	return errorCheck(results, 1)
+}
+
+func (ovsdb Client) DeleteAddressSet(lswitch string, name string) error {
+	deleteOp := ovs.Operation{
+		Op:    "delete",
+		Table: "Address_Set",
+		Where: newCondition("name", "==", name),
+	}
+
+	results, err := ovsdb.transact("OVN_Northbound", deleteOp)
+	if err != nil {
+		return fmt.Errorf("transaction error: deleting address set on %s: %s",
+			lswitch, err)
+	}
+	return errorCheck(results, 1)
+}
+
 // ListInterfaces gets all openflow interfaces.
 func (ovsdb Client) ListInterfaces() ([]Interface, error) {
 	bridgeReply, err := ovsdb.transact("Open_vSwitch", ovs.Operation{
