@@ -16,11 +16,12 @@ import (
 
 type server struct {
 	db.Conn
+	minion *db.Minion
 }
 
 func minionServerRun(conn db.Conn) {
 	var sock net.Listener
-	server := server{conn}
+	server := server{conn, &db.Minion{}}
 	for {
 		var err error
 		sock, err = net.Listen("tcp", ":9999")
@@ -42,15 +43,14 @@ func (s server) GetMinionConfig(cts context.Context,
 	_ *pb.Request) (*pb.MinionConfig, error) {
 
 	var cfg pb.MinionConfig
-
-	if m, err := s.MinionSelf(); err == nil {
-		cfg.Role = db.RoleToPB(m.Role)
-		cfg.PrivateIP = m.PrivateIP
-		cfg.PublicIP = m.PublicIP
-		cfg.Spec = m.Spec
-		cfg.Provider = m.Provider
-		cfg.Size = m.Size
-		cfg.Region = m.Region
+	if s.minion.Self {
+		cfg.Role = db.RoleToPB(s.minion.Role)
+		cfg.PrivateIP = s.minion.PrivateIP
+		cfg.PublicIP = s.minion.PublicIP
+		cfg.Spec = s.minion.Spec
+		cfg.Provider = s.minion.Provider
+		cfg.Size = s.minion.Size
+		cfg.Region = s.minion.Region
 	} else {
 		cfg.Role = db.RoleToPB(db.None)
 	}
@@ -67,15 +67,16 @@ func (s server) SetMinionConfig(ctx context.Context,
 			minion = view.InsertMinion()
 		}
 
-		minion.Role = db.PBToRole(msg.Role)
-		minion.PrivateIP = msg.PrivateIP
-		minion.PublicIP = msg.PublicIP
-		minion.Spec = msg.Spec
-		minion.Provider = msg.Provider
-		minion.Size = msg.Size
-		minion.Region = msg.Region
-		minion.Self = true
-		view.Commit(minion)
+		s.minion.ID = minion.ID
+		s.minion.Role = db.PBToRole(msg.Role)
+		s.minion.PrivateIP = msg.PrivateIP
+		s.minion.PublicIP = msg.PublicIP
+		s.minion.Spec = msg.Spec
+		s.minion.Provider = msg.Provider
+		s.minion.Size = msg.Size
+		s.minion.Region = msg.Region
+		s.minion.Self = true
+		view.Commit(*s.minion)
 
 		return nil
 	})
