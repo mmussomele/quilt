@@ -679,9 +679,26 @@ func updateContainerIPs(containers []db.Container, labels []db.Label) {
 		labelIP[l.Label] = l.IP
 	}
 
-	for _, dbc := range containers { // fan out and wg?
-		var err error
+	containerChannel := make(chan db.Container, len(containers))
+	for _, c := range containers {
+		containerChannel <- c
+	}
+	close(containerChannel)
 
+	var wg sync.WaitGroup
+	wg.Add(concurrencyLimit)
+	for i := 0; i < concurrencyLimit; i++ {
+		go updateContainers(containerChannel, labelIP, &wg)
+	}
+	wg.Wait()
+}
+
+func updateContainers(in chan db.Container, labelIP map[string]string,
+	wg *sync.WaitGroup) {
+
+	defer wg.Done()
+	for dbc := range in {
+		var err error
 		ns := networkNS(dbc.DockerID)
 		ip := dbc.IP
 
