@@ -12,6 +12,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/NetSys/quilt/db"
 	"github.com/NetSys/quilt/join"
@@ -140,23 +142,38 @@ func runWorker(conn db.Conn, dk docker.Client) {
 		})
 		connections := view.SelectFromConnection(nil)
 
+		var wg sync.WaitGroup
+		wg.Add(2) // there are always 3 goroutines
+
+		go updateEtcHosts(dk, containers, labels, connections, &wg) // indep
+		go updateNameservers(dk, containers, &wg)                   // indep
+
 		updateNamespaces(containers)
-		updateVeths(containers)
+		updateVeths(containers) // go into this and parallelize
 		updateNAT(containers, connections)
 		updatePorts(odb, containers)
+		log.Info("Done update ports")
 
 		if exists, err := linkExists("", quiltBridge); exists {
 			updateDefaultGw(odb)
-			updateOpenFlow(dk, odb, containers, labels, connections)
+			log.Info("Done update default gw")
+			updateOpenFlow(dk, odb, containers, labels,
+				connections)
+
 		} else if err != nil {
 			log.WithError(err).Error("failed to check if link exists")
 		}
-		updateNameservers(dk, containers)
-		updateContainerIPs(containers, labels)
-		updateRoutes(containers)
-		updateEtcHosts(dk, containers, labels, connections)
-		updateLoopback(containers)
 
+		updateContainerIPs(containers, labels)
+		log.Info("Done update container IPs")
+		updateRoutes(containers)
+		log.Info("Done update routes")
+
+		log.Info("Waiting...")
+		wg.Wait()
+		log.Info("Done waiting")
+		updateLoopback(containers)
+		log.Info("Done update loopback")
 		return nil
 	})
 }
@@ -275,24 +292,32 @@ func updateVeths(containers []db.Container) {
 
 	pairs, lefts, rights := join.HashJoin(currentVeths, targetVeths, key, key)
 
+	startTime := time.Now()
 	for _, l := range lefts {
 		if err := delVeth(l.(netdev)); err != nil {
 			log.WithError(err).Error("failed to delete veth")
 			continue
 		}
 	}
+	log.Infof("Took %v to delete veths", time.Now().Sub(startTime))
+	startTime = time.Now()
+
 	for _, r := range rights {
 		if err := addVeth(r.(netdev)); err != nil {
 			log.WithError(err).Error("failed to add veth")
 			continue
 		}
 	}
+	log.Infof("Took %v to add veths", time.Now().Sub(startTime))
+	startTime = time.Now()
+
 	for _, p := range pairs {
 		if err := modVeth(p.L.(netdev), p.R.(netdev)); err != nil {
 			log.WithError(err).Error("failed to modify veth")
 			continue
 		}
 	}
+	log.Infof("Took %v to mod veths", time.Now().Sub(startTime))
 }
 
 func generateTargetVeths(containers []db.Container) netdevSlice {
@@ -384,6 +409,7 @@ func updateNAT(containers []db.Container, connections []db.Connection) {
 	_, rulesToDel, rulesToAdd := join.HashJoin(currRules, targetRules, nil, nil)
 
 	for _, rule := range rulesToDel {
+		// The deletes can be done concurrently
 		if err := deleteNatRule(rule.(ipRule)); err != nil {
 			log.WithError(err).Error("failed to delete ip rule")
 			continue
@@ -391,6 +417,7 @@ func updateNAT(containers []db.Container, connections []db.Connection) {
 	}
 
 	for _, rule := range rulesToAdd {
+		// The adds can be done concurrently
 		if err := addNatRule(rule.(ipRule)); err != nil {
 			log.WithError(err).Error("failed to add ip rule")
 			continue
@@ -634,7 +661,7 @@ func updateContainerIPs(containers []db.Container, labels []db.Label) {
 		labelIP[l.Label] = l.IP
 	}
 
-	for _, dbc := range containers {
+	for _, dbc := range containers { // fan out and wg?
 		var err error
 
 		ns := networkNS(dbc.DockerID)
@@ -771,6 +798,8 @@ func generateCurrentRoutes(namespace string) (routeSlice, error) {
 // choosing datapath recirculation instead.
 func updateOpenFlow(dk docker.Client, odb ovsdb.Client, containers []db.Container,
 	labels []db.Label, connections []db.Connection) {
+
+	defer log.Info("Done update open flow")
 	targetOF, err := generateTargetOpenFlow(dk, odb, containers, labels, connections)
 	if err != nil {
 		log.WithError(err).Error("failed to get target OpenFlow flows")
@@ -784,17 +813,21 @@ func updateOpenFlow(dk docker.Client, odb ovsdb.Client, containers []db.Containe
 
 	_, flowsToDel, flowsToAdd := join.HashJoin(currentOF, targetOF, nil, nil)
 
+	startTime := time.Now()
 	for _, f := range flowsToDel {
 		if err := deleteOFRule(dk, f.(OFRule)); err != nil {
 			log.WithError(err).Error("error deleting OpenFlow flow")
 		}
 	}
+	log.Infof("Took %v to delete OFRules", time.Now().Sub(startTime))
+	startTime = time.Now()
 
 	for _, f := range flowsToAdd {
 		if err := addOFRule(dk, f.(OFRule)); err != nil {
 			log.WithError(err).Error("error adding OpenFlow flow")
 		}
 	}
+	log.Infof("Took %v to add OFRules", time.Now().Sub(startTime))
 }
 
 func generateCurrentOpenFlow(dk docker.Client) (OFRuleSlice, error) {
@@ -1045,7 +1078,9 @@ func generateTargetOpenFlow(dk docker.Client, odb ovsdb.Client,
 }
 
 // updateNameservers assigns each container the same nameservers as the host.
-func updateNameservers(dk docker.Client, containers []db.Container) {
+func updateNameservers(dk docker.Client, containers []db.Container, wg *sync.WaitGroup) {
+	defer log.Info("Done update nameservers")
+	defer wg.Done()
 	hostResolv, err := ioutil.ReadFile("/etc/resolv.conf")
 	if err != nil {
 		log.WithError(err).Error("failed to read /etc/resolv.conf")
@@ -1076,7 +1111,10 @@ func updateNameservers(dk docker.Client, containers []db.Container) {
 }
 
 func updateEtcHosts(dk docker.Client, containers []db.Container, labels []db.Label,
-	connections []db.Connection) {
+	connections []db.Connection, wg *sync.WaitGroup) {
+
+	defer log.Info("Finished update etc hosts")
+	defer wg.Done()
 
 	/* Map label name to the label itself. */
 	labelMap := make(map[string]db.Label)
