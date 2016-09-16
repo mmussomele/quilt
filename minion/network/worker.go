@@ -1167,24 +1167,41 @@ func updateEtcHosts(dk docker.Client, containers []db.Container, labels []db.Lab
 		conns[conn.From] = append(conns[conn.From], conn.To)
 	}
 
+	containerChannel := make(chan db.Container, len(containers))
 	for _, dbc := range containers {
-		id := dbc.DockerID
+		containerChannel <- dbc
+	}
+	close(containerChannel)
 
-		currHosts, err := dk.GetFromContainer(id, "/etc/hosts")
-		if err != nil {
-			log.WithError(err).Error("Failed to get /etc/hosts")
-			return
-		}
+	updateHosts := func(in chan db.Container, etcWG *sync.WaitGroup) {
 
-		newHosts := generateEtcHosts(dbc, labelMap, conns)
+		defer etcWG.Done()
+		for dbc := range in {
+			id := dbc.DockerID
 
-		if newHosts != currHosts {
-			err = dk.WriteToContainer(id, newHosts, "/etc", "hosts", 0644)
+			currHosts, err := dk.GetFromContainer(id, "/etc/hosts")
 			if err != nil {
-				log.WithError(err).Error("Failed to update /etc/hosts")
+				log.WithError(err).Error("Failed to get /etc/hosts")
+				continue
+			}
+
+			newHosts := generateEtcHosts(dbc, labelMap, conns)
+
+			if newHosts != currHosts {
+				err = dk.WriteToContainer(id, newHosts, "/etc", "hosts", 0644)
+				if err != nil {
+					log.WithError(err).Error("Failed to update /etc/hosts")
+				}
 			}
 		}
 	}
+
+	var etcWG sync.WaitGroup
+	etcWG.Add(concurrencyLimit)
+	for i := 0; i < concurrencyLimit; i++ {
+		go updateHosts(containerChannel, &etcWG)
+	}
+	etcWG.Wait()
 }
 
 func generateEtcHosts(dbc db.Container, labels map[string]db.Label,
