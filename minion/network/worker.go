@@ -1123,24 +1123,40 @@ func updateNameservers(dk docker.Client, containers []db.Container, wg *sync.Wai
 	matches := nsRE.FindAllString(string(hostResolv), -1)
 	newNameservers := strings.Join(matches, "\n")
 
-	for _, dbc := range containers {
-		id := dbc.DockerID
+	updateNSFunc := func(in chan db.Container, nsWG *sync.WaitGroup) {
+		defer nsWG.Done()
 
-		currNameservers, err := dk.GetFromContainer(id, "/etc/resolv.conf")
-		if err != nil {
-			log.WithError(err).Error("failed to get /etc/resolv.conf")
-			return
-		}
-
-		if newNameservers != currNameservers {
-			err = dk.WriteToContainer(id, newNameservers, "/etc",
-				"resolv.conf", 0644)
+		for dbc := range in {
+			id := dbc.DockerID
+			currNameservers, err := dk.GetFromContainer(id, "/etc/resolv.conf")
 			if err != nil {
-				log.WithError(err).Error(
-					"failed to update /etc/resolv.conf")
+				log.WithError(err).Error("failed to get /etc/resolv.conf")
+				continue
+			}
+
+			if newNameservers != currNameservers {
+				err = dk.WriteToContainer(id, newNameservers, "/etc",
+					"resolv.conf", 0644)
+				if err != nil {
+					log.WithError(err).Error(
+						"failed to update /etc/resolv.conf")
+				}
 			}
 		}
 	}
+
+	containerChan := make(chan db.Container, len(containers))
+	for _, dbc := range containers {
+		containerChan <- dbc
+	}
+	close(containerChan)
+
+	var nsWG sync.WaitGroup
+	nsWG.Add(concurrencyLimit)
+	for i := 0; i < concurrencyLimit; i++ {
+		go updateNSFunc(containerChan, &nsWG)
+	}
+	nsWG.Wait()
 }
 
 func updateEtcHosts(dk docker.Client, containers []db.Container, labels []db.Label,
