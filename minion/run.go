@@ -2,6 +2,7 @@ package minion
 
 import (
 	"fmt"
+	"runtime"
 	"time"
 
 	"github.com/NetSys/quilt/api"
@@ -24,6 +25,11 @@ func Run() {
 	//runProfiler(5 * time.Minute)
 
 	log.Info("Minion Start")
+	cpuLimit := runtime.NumCPU() - 1
+	if cpuLimit < 1 {
+		cpuLimit = 1
+	}
+	runtime.GOMAXPROCS(cpuLimit) // Reserve a core for the system
 
 	conn := db.New()
 	dk := docker.New("unix:///var/run/docker.sock")
