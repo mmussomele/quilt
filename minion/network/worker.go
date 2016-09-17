@@ -848,10 +848,8 @@ func updateOpenFlow(dk docker.Client, odb ovsdb.Client, containers []db.Containe
 	_, flowsToDel, flowsToAdd := join.HashJoin(currentOF, targetOF, nil, nil)
 
 	startTime := time.Now()
-	for _, f := range flowsToDel {
-		if err := deleteOFRule(dk, f.(OFRule)); err != nil {
-			log.WithError(err).Error("error deleting OpenFlow flow")
-		}
+	if err := deleteOFRules(dk, flowsToDel); err != nil {
+		log.WithError(err).Error("error deleting OpenFlow flow")
 	}
 	log.Infof("Took %v to delete OFRules", time.Now().Sub(startTime))
 	startTime = time.Now()
@@ -1489,9 +1487,16 @@ func addOFRules(dk docker.Client, flows []interface{}) error {
 	return nil
 }
 
-func deleteOFRule(dk docker.Client, flow OFRule) error {
-	args := fmt.Sprintf("ovs-ofctl del-flows --strict %s %s,%s",
-		quiltBridge, flow.table, flow.match)
+func deleteOFRules(dk docker.Client, flows []interface{}) error {
+	flowCommands := []string{}
+	for _, f := range flows {
+		flow := f.(OFRule)
+		flowCommands = append(flowCommands, fmt.Sprintf("%s,%s",
+			flow.table, flow.match))
+	}
+	flowsString := strings.Join(flowCommands, " ")
+	args := fmt.Sprintf("ovs-ofctl del-flows --strict %s %s",
+		quiltBridge, flowsString)
 	err := dk.Exec(supervisor.Ovsvswitchd, strings.Split(args, " ")...)
 	if err != nil {
 		return err
