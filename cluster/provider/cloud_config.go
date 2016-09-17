@@ -11,6 +11,22 @@ const (
 
 var cloudConfigFormat = `#!/bin/bash
 
+initialize_logging() {
+	cat <<- EOF > /usr/bin/logging
+while /bin/true; do (/bin/echo "%CPU %MEM ARGS $(date)" && /bin/ps -e -o pcpu,pmem,args --sort=pcpu | /usr/bin/cut -d" " -f1-5 | /usr/bin/tail) >> /var/log/ps.log; /bin/sleep 5; done
+	EOF
+	cat <<- EOF > /etc/systemd/system/logging.service
+	[Unit]
+	Description=Logging
+
+	[Service]
+	ExecStart=/bin/sh /usr/bin/logging
+
+	[Install]
+	WantedBy=multi-user.target
+	EOF
+}
+
 initialize_ovs() {
 	cat <<- EOF > /etc/systemd/system/ovs.service
 	[Unit]
@@ -112,6 +128,7 @@ date >> /var/log/bootscript.log
 
 export DEBIAN_FRONTEND=noninteractive
 
+initialize_logging
 install_docker
 initialize_ovs
 initialize_docker
@@ -124,10 +141,10 @@ setup_user quilt "$ssh_keys"
 systemctl daemon-reload
 
 # Enable our services to run on boot
-systemctl enable {ovs,docker,minion}.service
+systemctl enable {ovs,docker,minion,logging}.service
 
 # Start our services
-systemctl restart {ovs,docker,minion}.service
+systemctl restart {ovs,docker,minion,logging}.service
 
 echo -n "Completed Boot Script: " >> /var/log/bootscript.log
 date >> /var/log/bootscript.log
