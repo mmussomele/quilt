@@ -294,29 +294,12 @@ func updateVeths(containers []db.Container) {
 	pairs, lefts, rights := join.HashJoin(currentVeths, targetVeths, key, key)
 
 	startTime := time.Now()
-	for _, l := range lefts {
-		if err := delVeth(l.(netdev)); err != nil {
-			log.WithError(err).Error("failed to delete veth")
-			continue
-		}
-	}
+	doVeths(lefts, delVeth, "delete")
 	log.Infof("Took %v to delete veths", time.Now().Sub(startTime))
 	startTime = time.Now()
 
 	// Adding veths takes a long time, so we do it concurrently
-	vethsChannel := make(chan netdev, len(rights))
-	for _, r := range rights {
-		vethsChannel <- r.(netdev)
-	}
-	close(vethsChannel)
-
-	var wg sync.WaitGroup
-	wg.Add(concurrencyLimit)
-	for i := 0; i < concurrencyLimit; i++ {
-		go addVeths(vethsChannel, &wg)
-	}
-	wg.Wait()
-
+	doVeths(rights, addVeth, "add")
 	log.Infof("Took %v to add veths", time.Now().Sub(startTime))
 	startTime = time.Now()
 
@@ -329,13 +312,29 @@ func updateVeths(containers []db.Container) {
 	log.Infof("Took %v to mod veths", time.Now().Sub(startTime))
 }
 
-func addVeths(veths chan netdev, wg *sync.WaitGroup) {
-	defer wg.Done()
-	for v := range veths {
-		if err := addVeth(v); err != nil {
-			log.WithError(err).Error("failed to add veth")
+func doVeths(veths []interface{}, do func(netdev) error, action string) {
+	var wg sync.WaitGroup
+	vethsChannel := make(chan netdev, len(veths))
+	for _, v := range veths {
+		vethsChannel <- v.(netdev)
+	}
+	close(vethsChannel)
+
+	processVeths := func() {
+		defer wg.Done()
+		for v := range vethsChannel {
+			if err := do(v); err != nil {
+				log.WithError(err).Errorf("failed to %s veth",
+					action)
+			}
 		}
 	}
+
+	wg.Add(concurrencyLimit)
+	for i := 0; i < concurrencyLimit; i++ {
+		go processVeths()
+	}
+	wg.Wait()
 }
 
 func generateTargetVeths(containers []db.Container) netdevSlice {
