@@ -684,10 +684,10 @@ func updateContainerIPs(containers []db.Container, labels []db.Label) {
 	}
 	close(containerChannel)
 
-	var wg *sync.WaitGroup
+	var wg sync.WaitGroup
 	wg.Add(concurrencyLimit)
 	for i := 0; i < concurrencyLimit; i++ {
-		go updateContainers(containerChannel, labelIP, wg)
+		go updateContainers(containerChannel, labelIP, &wg)
 	}
 	wg.Wait()
 }
