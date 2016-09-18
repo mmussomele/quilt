@@ -31,7 +31,7 @@ const (
 	innerVeth        string = "eth0"
 	loopback         string = "lo"
 	innerMTU         int    = 1400
-	concurrencyLimit int    = 8 // Adjust to change per function goroutine limit
+	concurrencyLimit int    = 32 // Adjust to change per function goroutine limit
 )
 
 // This represents a network namespace
