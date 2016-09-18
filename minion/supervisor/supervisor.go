@@ -32,7 +32,7 @@ const (
 	Swarm = "swarm"
 )
 
-const ovsImage = "quilt/ovs"
+const ovsImage = "quay.io/kklin/ovs"
 
 var images = map[string]string{
 	Etcd:          "quay.io/coreos/etcd:v3.0.2",
