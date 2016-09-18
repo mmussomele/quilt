@@ -21,7 +21,7 @@ import (
 // Run blocks executing the minion.
 func Run() {
 	// XXX Uncomment the following line to run the profiler
-	//runProfiler(5 * time.Minute)
+	runProfiler(5 * time.Minute)
 
 	log.Info("Minion Start")
 
