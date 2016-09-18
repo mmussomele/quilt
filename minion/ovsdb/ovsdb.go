@@ -159,7 +159,7 @@ func (ovsdb Client) ListLogicalPorts(lswitch string) ([]LPort, error) {
 
 	portReply, err := ovsdb.transact("OVN_Northbound", ovs.Operation{
 		Op:    "select",
-		Table: "Logical_Port",
+		Table: "Logical_Switch_Port",
 		Where: noCondition(),
 	})
 	if err != nil {
@@ -195,7 +195,7 @@ func (ovsdb Client) CreateLogicalPort(lswitch, name, mac, ip string) error {
 
 	insertOp := ovs.Operation{
 		Op:       "insert",
-		Table:    "Logical_Port",
+		Table:    "Logical_Switch_Port",
 		Row:      port,
 		UUIDName: "qlportadd",
 	}
@@ -222,7 +222,7 @@ func (ovsdb Client) CreateLogicalPort(lswitch, name, mac, ip string) error {
 func (ovsdb Client) DeleteLogicalPort(lswitch string, lport LPort) error {
 	deleteOp := ovs.Operation{
 		Op:    "delete",
-		Table: "Logical_Port",
+		Table: "Logical_Switch_Port",
 		Where: newCondition("_uuid", "==", lport.uuid),
 	}
 

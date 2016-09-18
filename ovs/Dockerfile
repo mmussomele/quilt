@@ -4,18 +4,23 @@ ENV build_deps \
     build-essential \
     libssl-dev \
     python2.7 \
-    wget
+    autoconf \
+    libtool \
+    python-pip \
+    git
 
-ENV ver 2.5.0
+ENV ver 2.6
 
 WORKDIR /tmp/ovs
 
 RUN \
 apt-get update \
 && apt-get install -y ${build_deps} \
-&& wget http://openvswitch.org/releases/openvswitch-${ver}.tar.gz \
-&& tar -xf openvswitch-${ver}.tar.gz \
-&& cd openvswitch-${ver} \
+&& pip install six \
+&& git clone https://github.com/openvswitch/ovs.git \
+&& cd ovs \
+&& git checkout branch-${ver} \
+&& ./boot.sh \
 && ./configure --localstatedir="/var" --sysconfdir="/etc" --prefix="/usr" --enable-ssl \
 && make install \
 && apt-get remove --purge -y ${build_deps} \
