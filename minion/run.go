@@ -22,10 +22,10 @@ import (
 // Run blocks executing the minion.
 func Run() {
 	// XXX Uncomment the following line to run the profiler
-	//runProfiler(5 * time.Minute)
+	runProfiler(5 * time.Minute)
 
 	log.Info("Minion Start")
-	cpuLimit := runtime.NumCPU() - 1
+	cpuLimit := 4 // runtime.NumCPU() - 2
 	if cpuLimit < 1 {
 		cpuLimit = 1
 	}
