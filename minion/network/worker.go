@@ -158,8 +158,9 @@ func runWorker(conn db.Conn, dk docker.Client) {
 		if exists, err := linkExists("", quiltBridge); exists {
 			updateDefaultGw(odb)
 			log.Info("Done update default gw")
-			updateOpenFlow(dk, odb, containers, labels,
-				connections)
+			wg.Add(1)
+			go updateOpenFlow(dk, odb, containers, labels,
+				connections, &wg)
 
 		} else if err != nil {
 			log.WithError(err).Error("failed to check if link exists")
@@ -831,9 +832,10 @@ func generateCurrentRoutes(namespace string) (routeSlice, error) {
 // XXX: The multipath action doesn't perform well.  We should migrate away from it
 // choosing datapath recirculation instead.
 func updateOpenFlow(dk docker.Client, odb ovsdb.Client, containers []db.Container,
-	labels []db.Label, connections []db.Connection) {
+	labels []db.Label, connections []db.Connection, wg *sync.WaitGroup) {
 
 	defer log.Info("Done update open flow")
+	defer wg.Done()
 	targetOF, err := generateTargetOpenFlow(dk, odb, containers, labels, connections)
 	if err != nil {
 		log.WithError(err).Error("failed to get target OpenFlow flows")
