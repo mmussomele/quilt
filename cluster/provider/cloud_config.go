@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	quiltImage = "quilt/quilt:paper"
+	quiltImage = "mmussomele/dev:latest"
 )
 
 var cloudConfigFormat = `#!/bin/bash
@@ -84,7 +84,6 @@ initialize_minion() {
 	TimeoutSec=1000
 	ExecStartPre=-/usr/bin/mkdir -p /var/run/netns
 	ExecStartPre=-/usr/bin/docker kill minion
-	ExecStartPre=-/usr/bin/docker rm minion
 	ExecStartPre=/usr/bin/docker pull %[1]s
 	ExecStart=/usr/bin/docker run --net=host --name=minion --privileged \
 	-v /var/run/docker.sock:/var/run/docker.sock \
