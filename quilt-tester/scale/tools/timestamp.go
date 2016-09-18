@@ -93,7 +93,7 @@ Loop:
 // so we can parallelize across multiple hosts, but have to serialize for each host.
 func queryTimestamps(minion string, containers []string) chan time.Time {
 	out := make(chan time.Time)
-	timestampRegex := regexp.MustCompile(`quilt_timestamp=(\d+)\n`)
+	timestampRegex := regexp.MustCompile(`quilt_timestamp_unix=(\d+)\n`)
 	cmdTemplate := `docker logs %s`
 
 	go func() {
