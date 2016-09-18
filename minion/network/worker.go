@@ -1472,16 +1472,16 @@ func addOFRules(dk docker.Client, flows []interface{}) error {
 	}
 	flowsString := strings.Join(flowCommands, "\n")
 
+	// XXX: We could skip the intermediary file by using a HEREDOC.
 	// add-flows can add all of our flows from a single file at one
-	flowsTempFile := fmt.Sprintf("/tmp/.wknet-OFadd.%s",
-		time.Now().Format("Jan_02_2006-15.04.05.000"))
-	err := ioutil.WriteFile(flowsTempFile, []byte(flowsString), 0666)
+	// XXX: Cleanup the temp file.
+	flowsTempFile := ".wknet-OFadds"
+	err := dk.WriteToContainer(supervisor.Ovsvswitchd, flowsString, "/tmp", flowsTempFile, 0644)
 	if err != nil {
 		return err
 	}
-	defer os.Remove(flowsTempFile) // clean up the file when we're done
 
-	args := fmt.Sprintf("ovs-ofctl add-flows %s %s", quiltBridge, flowsTempFile)
+	args := fmt.Sprintf("ovs-ofctl add-flows %s %s", quiltBridge, "/tmp/"+flowsTempFile)
 	err = dk.Exec(supervisor.Ovsvswitchd, strings.Split(args, " ")...)
 	if err != nil {
 		return err
