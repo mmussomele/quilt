@@ -10,7 +10,3 @@ set -e
 status_line "Begin build..."
 
 make all check lint format-check coverage
-
-if [[ $(make -s lint 2>&1) ]] ; then # golint doesn't fail, just prints things.
-    exit 1
-fi
