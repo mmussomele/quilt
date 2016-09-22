@@ -832,16 +832,12 @@ func updateOpenFlow(dk docker.Client, odb ovsdb.Client, containers []db.Containe
 
 	_, flowsToDel, flowsToAdd := join.HashJoin(currentOF, targetOF, nil, nil)
 
-	for _, f := range flowsToDel {
-		if err := deleteOFRule(dk, f.(OFRule)); err != nil {
-			log.WithError(err).Error("error deleting OpenFlow flow")
-		}
+	if err := deleteOFRules(dk, flowsToDel); err != nil {
+		log.WithError(err).Error("error deleting OpenFlow flow")
 	}
 
-	for _, f := range flowsToAdd {
-		if err := addOFRule(dk, f.(OFRule)); err != nil {
-			log.WithError(err).Error("error adding OpenFlow flow")
-		}
+	if err := addOFRules(dk, flowsToAdd); err != nil {
+		log.WithError(err).Error("error adding OpenFlow flow")
 	}
 }
 
@@ -1448,19 +1444,44 @@ func deleteRoute(namespace string, r route) error {
 	return nil
 }
 
-func addOFRule(dk docker.Client, flow OFRule) error {
-	args := fmt.Sprintf("ovs-ofctl add-flow %s %s,%s,actions=%s",
-		quiltBridge, flow.table, flow.match, flow.actions)
-	err := dk.Exec(supervisor.Ovsvswitchd, strings.Split(args, " ")...)
+func addOFRules(dk docker.Client, flows []interface{}) error {
+	flowCommands := []string{}
+	for _, f := range flows {
+		flow := f.(OFRule)
+		flowCommands = append(flowCommands, fmt.Sprintf("%s,%s,actions=%s",
+			flow.table, flow.match, flow.actions))
+	}
+	flowsString := strings.Join(flowCommands, "\n")
+
+	// XXX: We could skip the intermediary file by using a HEREDOC.
+	// add-flows can add all of our flows from a single file at one
+	// XXX: Cleanup the temp file.
+	flowsTempFile := ".wknet-OFadds"
+	err := dk.WriteToContainer(supervisor.Ovsvswitchd, flowsString, "/tmp",
+		flowsTempFile, 0644)
+	if err != nil {
+		return err
+	}
+
+	args := fmt.Sprintf("ovs-ofctl add-flows %s %s", quiltBridge,
+		"/tmp/"+flowsTempFile)
+	err = dk.Exec(supervisor.Ovsvswitchd, strings.Split(args, " ")...)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func deleteOFRule(dk docker.Client, flow OFRule) error {
-	args := fmt.Sprintf("ovs-ofctl del-flows --strict %s %s,%s",
-		quiltBridge, flow.table, flow.match)
+func deleteOFRules(dk docker.Client, flows []interface{}) error {
+	flowCommands := []string{}
+	for _, f := range flows {
+		flow := f.(OFRule)
+		flowCommands = append(flowCommands, fmt.Sprintf("%s,%s",
+			flow.table, flow.match))
+	}
+	flowsString := strings.Join(flowCommands, " ")
+	args := fmt.Sprintf("ovs-ofctl del-flows --strict %s %s",
+		quiltBridge, flowsString)
 	err := dk.Exec(supervisor.Ovsvswitchd, strings.Split(args, " ")...)
 	if err != nil {
 		return err
