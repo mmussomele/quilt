@@ -26,6 +26,7 @@ RUN VER=1.6.2 \
 done \
 && rm -rf /tmp/build
 Copy config/id_rsa /root/.ssh/id_rsa
+Copy "~/.slack_hook" "~/.slack_hook"
 RUN chmod 0600 /root/.ssh/id_rsa
 
 Entrypoint ["quilt-tester"]
