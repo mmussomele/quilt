@@ -14,6 +14,13 @@ import (
 	log "github.com/Sirupsen/logrus"
 )
 
+// Reserved namespace for the scale tester. If you are developing the scale tester,
+// use the `-namespace=<your_namespace>` command line flag to ensure you don't interfere
+// with the tester.
+// We want the namespace to be deterministic so the user can use `quilt stop` to halt the
+// namespace if the scale tester fails for some reason.
+const Namespace = "scale-bd89e4c89f4d384e7afb155a3af99d8a6f4f5a06a9fecf0b6d220eb66e"
+
 // The time limit for how long containers take to boot.
 const bootLimit = time.Hour
 

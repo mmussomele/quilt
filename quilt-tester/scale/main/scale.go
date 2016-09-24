@@ -18,18 +18,12 @@ import (
 )
 
 const (
-	// Reserved namespace for the scale tester. If you are developing the scale tester,
-	// use the `-namespace=<your_namespace>` command line flag to ensure you don't interfere
-	// with the tester.
-	// We want the namespace to be deterministic so the user can use `quilt stop` to halt the
-	// namespace if the scale tester fails for some reason.
-	scaleNamespace = "scale-bd89e4c89f4d384e7afb155a3af99d8a6f4f5a06a9fecf0b6d220eb66e"
-
 	prebootSpec  = "pre.spec"
 	mainSpec     = "main.spec"
 	postbootSpec = "post.spec"
 )
 
+// Used to run the scale tester from the command line
 func main() {
 	log.SetLevel(log.InfoLevel)
 	log.SetFormatter(util.Formatter{})
@@ -41,7 +35,7 @@ func main() {
 	specFolderFlag := flag.String("test-files", "", "folder containing test specs")
 	// Only used to override the default namespace when developing on the scale
 	// tester.
-	namespaceFlag := flag.String("namespace", scaleNamespace,
+	namespaceFlag := flag.String("namespace", scale.ScaleNamespace,
 		"namespace to run scale tests on")
 	outputFlag := flag.String("out-file", "", "output file")
 	logFlag := flag.String("log-file", "/dev/null", "log file")
