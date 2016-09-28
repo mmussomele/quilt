@@ -37,8 +37,9 @@ func (db Database) InsertMachine() Machine {
 
 // SelectFromMachine gets all machines in the database that satisfy the 'check'.
 func (db Database) SelectFromMachine(check func(Machine) bool) []Machine {
+	machineTable := db.accessTable(MachineTable)
 	result := []Machine{}
-	for _, row := range db.tables[MachineTable].rows {
+	for _, row := range machineTable.rows {
 		if check == nil || check(row.(Machine)) {
 			result = append(result, row.(Machine))
 		}

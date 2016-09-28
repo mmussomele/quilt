@@ -2,6 +2,7 @@ package db
 
 import (
 	"fmt"
+	"math/rand"
 	"reflect"
 	"sort"
 	"testing"
@@ -123,6 +124,269 @@ func TestMachineString(t *testing.T) {
 	if got != exp {
 		t.Errorf("\nGot: %s\nExp: %s", got, exp)
 	}
+}
+
+func TestRestrictConnBasic(t *testing.T) {
+	conn := New()
+	conn.Transact(func(view Database) error {
+		m := view.InsertMachine()
+		m.Provider = "Amazon"
+		view.Commit(m)
+
+		return nil
+	})
+
+	conn.Restrict(MachineTable).Transact(func(view Database) error {
+		machines := view.SelectFromMachine(func(m Machine) bool {
+			return true
+		})
+
+		if len(machines) != 1 {
+			t.Fatal("No machines in DB, should be 1")
+		}
+		if machines[0].Provider != "Amazon" {
+			t.Fatal("Machine provider is not Amazon")
+		}
+
+		return nil
+	})
+}
+
+// Regular connections have access to all tables of the database
+func TestConnNoPanic(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatal("Conn panicked on valid transaction")
+		}
+	}()
+
+	conn := New()
+	conn.Transact(func(view Database) error {
+		view.InsertEtcd()
+		view.InsertLabel()
+		view.InsertMinion()
+		view.InsertMachine()
+		view.InsertCluster()
+		view.InsertPlacement()
+		view.InsertContainer()
+		view.InsertConnection()
+		view.InsertACL()
+
+		return nil
+	})
+}
+
+// Connections should not panic when accessing tables in their allowed set
+func TestRestrictConnNoPanic(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatal("Restricted conn panicked on valid transaction")
+		}
+	}()
+
+	conn := New().Restrict(MachineTable, ClusterTable)
+	conn.Transact(func(view Database) error {
+		view.InsertMachine()
+		view.InsertCluster()
+
+		return nil
+	})
+}
+
+// Connections should panic when accessing tables not in their allowed set
+func TestRestrictConnPanic(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("Restricted conn didn't panic on invalid transaction")
+		}
+	}()
+
+	conn := New().Restrict(MachineTable, ClusterTable)
+	conn.Transact(func(view Database) error {
+		view.InsertEtcd()
+
+		return nil
+	})
+}
+
+// This test and the test below cover an edge case where a restricted connection is
+// restricted further. This really shouldn't be done, but it should behave correctly
+// anyway.
+func TestRestrictRecurseNoPanic(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatal("Restricted conn panicked on valid restriction")
+		}
+	}()
+
+	c1 := New().Restrict(MachineTable, ClusterTable)
+	c1.Restrict(MachineTable) // should be fine, c1 can access MachineTable
+}
+
+func TestRestrictRecursePanic(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("Restricted conn didn't panic on invalid restriction")
+		}
+	}()
+
+	c1 := New().Restrict(MachineTable, ClusterTable)
+	c1.Restrict(EtcdTable) // can't restrict to a table you can't access
+}
+
+// Connections with restricted table sets should be able to run concurrently if their
+// table sets do not overlap.
+func TestRestrictConcurrent(t *testing.T) {
+	// Run the deadlock test multiple times to increase the odds of detecting a race
+	// condition
+	for i := 0; i < 10; i++ {
+		checkIndependentTransacts(t)
+	}
+}
+
+// returns false when the transactions deadlock
+func checkIndependentTransacts(t *testing.T) {
+	transactOneStart := make(chan struct{})
+	transactTwoDone := make(chan struct{})
+	done := make(chan struct{})
+	doneRoutines := make(chan struct{})
+	defer close(doneRoutines)
+
+	subConnOne, subConnTwo := getRandomRestrictedConns(New())
+	one := func() {
+		subConnOne.Transact(func(view Database) error {
+			close(transactOneStart)
+			select {
+			case <-transactTwoDone:
+				break
+			case <-doneRoutines:
+				return nil // break out of this if it times out
+			}
+			return nil
+		})
+
+		close(done)
+	}
+
+	two := func() {
+		// Wait for either the first transact to start or for timeout
+		select {
+		case <-transactOneStart:
+			break
+		case <-doneRoutines:
+			return // break out of this if it times out
+		}
+
+		subConnTwo.Transact(func(view Database) error {
+			return nil
+		})
+
+		close(transactTwoDone)
+	}
+
+	go one()
+	go two()
+	timeout := time.After(time.Second)
+	select {
+	case <-timeout:
+		t.Fatal("Transactions deadlocked")
+	case <-done:
+		return
+	}
+}
+
+// Test that transactions with overlapping table sets run sequentially.
+func TestRestrictSequential(t *testing.T) {
+	// Run the sequential test multiple times to increase the odds of detecting a
+	// race condition
+	for i := 0; i < 10; i++ {
+		checkRestrictSequential(t)
+	}
+}
+
+func checkRestrictSequential(t *testing.T) {
+	subConnOne, subConnTwo := getRandomRestrictedConns(New(),
+		pickTwoTables(map[TableType]struct{}{})...)
+
+	done := make(chan struct{})
+	defer close(done)
+	results := make(chan int)
+	defer close(results)
+
+	oneStarted := make(chan struct{})
+	one := func() {
+		subConnOne.Transact(func(view Database) error {
+			close(oneStarted)
+			time.Sleep(100 * time.Millisecond)
+			select {
+			case results <- 1:
+				return nil
+			case <-done:
+				return nil
+			}
+		})
+	}
+
+	two := func() {
+		subConnTwo.Transact(func(view Database) error {
+			select {
+			case results <- 2:
+				return nil
+			case <-done:
+				return nil
+			}
+		})
+	}
+
+	check := make(chan bool)
+	defer close(check)
+	go func() {
+		first := <-results
+		second := <-results
+
+		check <- (first == 1 && second == 2)
+	}()
+
+	go one()
+	<-oneStarted
+	go two()
+
+	timeout := time.After(time.Second)
+	select {
+	case <-timeout:
+		t.Fatal("Transactions timed out")
+	case success := <-check:
+		if !success {
+			t.Fatal("Transactions ran concurrently")
+		}
+	}
+}
+
+func getRandomRestrictedConns(conn Conn, tables ...TableType) (Conn, Conn) {
+	taken := map[TableType]struct{}{}
+	firstTables := pickTwoTables(taken)
+	secondTables := pickTwoTables(taken)
+
+	firstTables = append(firstTables, tables...)
+	secondTables = append(secondTables, tables...)
+
+	return conn.Restrict(firstTables...), conn.Restrict(secondTables...)
+}
+
+func pickTwoTables(taken map[TableType]struct{}) []TableType {
+	tableCount := int32(len(allTables))
+	chosen := []TableType{}
+	for len(chosen) < 2 {
+		tt := allTables[rand.Int31n(tableCount)]
+		if _, ok := taken[tt]; ok {
+			continue
+		}
+
+		taken[tt] = struct{}{}
+		chosen = append(chosen, tt)
+	}
+
+	return chosen
 }
 
 func TestTrigger(t *testing.T) {

@@ -2,6 +2,7 @@ package db
 
 import (
 	"reflect"
+	"sync"
 )
 
 // TableType represents a table in the database.
@@ -42,6 +43,7 @@ type table struct {
 
 	triggers    map[Trigger]struct{}
 	shouldAlert bool
+	sync.Mutex
 }
 
 func newTable() *table {

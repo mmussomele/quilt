@@ -3,6 +3,7 @@ package db
 import (
 	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -13,7 +14,7 @@ import (
 // modules flesh out that policy with actual implementation details.
 type Database struct {
 	tables  map[TableType]*table
-	idAlloc *int
+	idAlloc *idCounter
 }
 
 // A Trigger sends notifications when anything in their corresponding table changes.
@@ -30,27 +31,47 @@ type row interface {
 
 // A Conn is a database handle on which transactions may be executed.
 type Conn struct {
-	db   Database
-	lock *sync.Mutex
+	db Database
+}
+
+// An idCounter is a wrapper around the global DB id providing concurrency safe use
+type idCounter struct {
+	sync.Mutex
+	curID int
 }
 
 // New creates a connection to a brand new database.
 func New() Conn {
-	db := Database{make(map[TableType]*table), new(int)}
+	db := Database{make(map[TableType]*table), &idCounter{}}
 	for _, t := range allTables {
 		db.tables[t] = newTable()
 	}
 
-	cn := Conn{db: db, lock: &sync.Mutex{}}
+	cn := Conn{db: db}
 	cn.runLogger()
 	return cn
 }
 
+// Restrict creates a new connection connected to the same database, but with restricted
+// access to only the given tables.
+func (cn Conn) Restrict(tables ...TableType) Conn {
+	// This Conn has the same database data, just a subset of the tables.
+	db := Database{make(map[TableType]*table), cn.db.idAlloc}
+	for _, t := range tables {
+		db.tables[t] = cn.db.accessTable(t)
+	}
+
+	return Conn{db: db}
+}
+
 // Transact executes database transactions.  It takes a closure, 'do', which is operates
-// on its 'db' argument.  Transactions are not concurrent, instead each runs
-// sequentially on it's database without conflicting with other transactions.
+// on its 'db' argument.  Transactions may be concurrent, but only if they operate on
+// independent sets of tables. Otherwise, each transaction runs sequentially on it's
+// database without conflicting with other transactions.
 func (cn Conn) Transact(do func(db Database) error) error {
-	cn.lock.Lock()
+	cn.lockTables()
+	defer cn.unlockTables()
+
 	err := do(cn.db)
 	var alertTables []*table
 	for _, table := range cn.db.tables {
@@ -59,7 +80,6 @@ func (cn Conn) Transact(do func(db Database) error) error {
 			table.shouldAlert = false
 		}
 	}
-	cn.lock.Unlock()
 
 	for _, table := range alertTables {
 		table.alert()
@@ -74,7 +94,8 @@ func (cn Conn) Trigger(tt ...TableType) Trigger {
 	trigger := Trigger{C: make(chan struct{}, 1), stop: make(chan struct{})}
 	cn.Transact(func(db Database) error {
 		for _, t := range tt {
-			db.tables[t].triggers[trigger] = struct{}{}
+			dbTable := db.accessTable(t)
+			dbTable.triggers[trigger] = struct{}{}
 		}
 		return nil
 	})
@@ -109,13 +130,35 @@ func (cn Conn) TriggerTick(seconds int, tt ...TableType) Trigger {
 	return trigger
 }
 
+// Lock all tables needed by the Conn to perform a transact. Locking tables in sorted
+// order avoids deadlock between two Conn's requesting intersecting sets of tables.
+func (cn Conn) lockTables() {
+	tables := tableSlice{}
+	for tt := range cn.db.tables {
+		tables = append(tables, tt)
+	}
+	sort.Sort(tables)
+
+	for _, tt := range tables {
+		cn.db.tables[tt].Lock()
+	}
+}
+
+// Unlock all tables needed by the Conn to perform a transact. Unlock order is
+// irrelevant.
+func (cn Conn) unlockTables() {
+	for _, t := range cn.db.tables {
+		t.Unlock()
+	}
+}
+
 // Stop a running trigger thus allowing resources to be deallocated.
 func (t Trigger) Stop() {
 	close(t.stop)
 }
 
 func (db Database) insert(r row) {
-	table := db.tables[getTableType(r)]
+	table := db.accessTable(getTableType(r))
 	table.shouldAlert = true
 	table.rows[r.getID()] = r
 }
@@ -123,7 +166,7 @@ func (db Database) insert(r row) {
 // Commit updates the database with the data contained in row.
 func (db Database) Commit(r row) {
 	rid := r.getID()
-	table := db.tables[getTableType(r)]
+	table := db.accessTable(getTableType(r))
 	old := table.rows[rid]
 
 	if reflect.TypeOf(old) != reflect.TypeOf(r) {
@@ -138,14 +181,44 @@ func (db Database) Commit(r row) {
 
 // Remove deletes row from the database.
 func (db Database) Remove(r row) {
-	table := db.tables[getTableType(r)]
+	table := db.accessTable(getTableType(r))
 	delete(table.rows, r.getID())
 	table.shouldAlert = true
 }
 
 func (db Database) nextID() int {
-	*db.idAlloc++
-	return *db.idAlloc
+	db.idAlloc.Lock()
+	defer db.idAlloc.Unlock()
+
+	db.idAlloc.curID++
+	return db.idAlloc.curID
+}
+
+// There is no need to lock the DB when accessing tables, since each Conn's db has a
+// separate map that it reads from, and they are never written to except at creation.
+// The only thing that gets written to are the db tables, but those get locked before
+// use, and this function can only access locked tables anyway.
+func (db Database) accessTable(tt TableType) *table {
+	dbTable, ok := db.tables[tt]
+	if !ok {
+		panic("No access to table: " + tt)
+	}
+
+	return dbTable
+}
+
+type tableSlice []TableType
+
+func (tables tableSlice) Len() int {
+	return len(tables)
+}
+
+func (tables tableSlice) Swap(i, j int) {
+	tables[i], tables[j] = tables[j], tables[i]
+}
+
+func (tables tableSlice) Less(i, j int) bool {
+	return tables[i] < tables[j]
 }
 
 type rowSlice []row

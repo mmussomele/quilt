@@ -22,8 +22,9 @@ func (db Database) InsertLabel() Label {
 
 // SelectFromLabel gets all labels in the database that satisfy 'check'.
 func (db Database) SelectFromLabel(check func(Label) bool) []Label {
+	labelTable := db.accessTable(LabelTable)
 	var result []Label
-	for _, row := range db.tables[LabelTable].rows {
+	for _, row := range labelTable.rows {
 		if check == nil || check(row.(Label)) {
 			result = append(result, row.(Label))
 		}
