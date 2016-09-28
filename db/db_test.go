@@ -2,6 +2,7 @@ package db
 
 import (
 	"fmt"
+	"math/rand"
 	"reflect"
 	"sort"
 	"testing"
@@ -15,7 +16,7 @@ func TestMachine(t *testing.T) {
 	conn := New()
 
 	var m Machine
-	err := conn.Transact(func(db Database) error {
+	err := conn.Txn(AllTables...).Run(func(db Database) error {
 		m = db.InsertMachine()
 		return nil
 	})
@@ -36,7 +37,7 @@ func TestMachine(t *testing.T) {
 	m.PublicIP = "1.2.3.4"
 	m.PrivateIP = "5.6.7.8"
 
-	err = conn.Transact(func(db Database) error {
+	err = conn.Txn(AllTables...).Run(func(db Database) error {
 		if err := SelectMachineCheck(db, nil, []Machine{old}); err != nil {
 			return err
 		}
@@ -65,7 +66,7 @@ func TestMachineSelect(t *testing.T) {
 	regions := []string{"here", "there", "anywhere", "everywhere"}
 
 	var machines []Machine
-	conn.Transact(func(db Database) error {
+	conn.Txn(AllTables...).Run(func(db Database) error {
 		for i := 0; i < 4; i++ {
 			m := db.InsertMachine()
 			m.Region = regions[i]
@@ -75,7 +76,7 @@ func TestMachineSelect(t *testing.T) {
 		return nil
 	})
 
-	err := conn.Transact(func(db Database) error {
+	err := conn.Txn(AllTables...).Run(func(db Database) error {
 		err := SelectMachineCheck(db, func(m Machine) bool {
 			return m.Region == "there"
 		}, []Machine{machines[1]})
@@ -125,6 +126,247 @@ func TestMachineString(t *testing.T) {
 	}
 }
 
+func TestTxnBasic(t *testing.T) {
+	conn := New()
+	conn.Txn(AllTables...).Run(func(view Database) error {
+		m := view.InsertMachine()
+		m.Provider = "Amazon"
+		view.Commit(m)
+
+		return nil
+	})
+
+	conn.Txn(MachineTable).Run(func(view Database) error {
+		machines := view.SelectFromMachine(func(m Machine) bool {
+			return true
+		})
+
+		if len(machines) != 1 {
+			t.Fatal("No machines in DB, should be 1")
+		}
+		if machines[0].Provider != "Amazon" {
+			t.Fatal("Machine provider is not Amazon")
+		}
+
+		return nil
+	})
+}
+
+func TestAllTablesNoPanic(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatal("Transaction panicked on valid transaction")
+		}
+	}()
+
+	conn := New()
+	conn.Txn(AllTables...).Run(func(view Database) error {
+		view.InsertEtcd()
+		view.InsertLabel()
+		view.InsertMinion()
+		view.InsertMachine()
+		view.InsertCluster()
+		view.InsertPlacement()
+		view.InsertContainer()
+		view.InsertConnection()
+		view.InsertACL()
+
+		return nil
+	})
+}
+
+// Transactions should not panic when accessing tables in their allowed set.
+func TestTxnNoPanic(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatal("Transaction panicked on valid tables")
+		}
+	}()
+
+	tr := New().Txn(MachineTable, ClusterTable)
+	tr.Run(func(view Database) error {
+		view.InsertMachine()
+		view.InsertCluster()
+
+		return nil
+	})
+}
+
+// Transactions should panic when accessing tables not in their allowed set.
+func TestTxnPanic(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("Transaction didn't panic on invalid tables")
+		}
+	}()
+
+	tr := New().Txn(MachineTable, ClusterTable)
+	tr.Run(func(view Database) error {
+		view.InsertEtcd()
+
+		return nil
+	})
+}
+
+// Transactions should be able to run concurrently if their table sets do not overlap.
+// This test is not comprehensive; it is merely a basic check to see is anything
+// is obviously wrong.
+func TestTxnConcurrent(t *testing.T) {
+	// Run the deadlock test multiple times to increase the odds of detecting a race
+	// condition
+	for i := 0; i < 10; i++ {
+		checkIndependentTransacts(t)
+	}
+}
+
+// Fails the test when the transactions deadlock.
+func checkIndependentTransacts(t *testing.T) {
+	transactOneStart := make(chan struct{})
+	transactTwoDone := make(chan struct{})
+	done := make(chan struct{})
+	doneRoutines := make(chan struct{})
+	defer close(doneRoutines)
+
+	subTxnOne, subTxnTwo := getRandomTransactions(New())
+	one := func() {
+		subTxnOne.Run(func(view Database) error {
+			close(transactOneStart)
+			select {
+			case <-transactTwoDone:
+				break
+			case <-doneRoutines:
+				return nil // break out of this if it times out
+			}
+			return nil
+		})
+
+		close(done)
+	}
+
+	two := func() {
+		// Wait for either the first transact to start or for timeout
+		select {
+		case <-transactOneStart:
+			break
+		case <-doneRoutines:
+			return // break out of this if it times out
+		}
+
+		subTxnTwo.Run(func(view Database) error {
+			return nil
+		})
+
+		close(transactTwoDone)
+	}
+
+	go one()
+	go two()
+	timeout := time.After(time.Second)
+	select {
+	case <-timeout:
+		t.Fatal("Transactions deadlocked")
+	case <-done:
+		return
+	}
+}
+
+// Test that Transactions with overlapping table sets run sequentially.
+// This test is not comprehensive; it is merely a basic check to see is anything
+// is obviously wrong.
+func TestTxnSequential(t *testing.T) {
+	// Run the sequential test multiple times to increase the odds of detecting a
+	// race condition
+	for i := 0; i < 10; i++ {
+		checkTxnSequential(t)
+	}
+}
+
+// Fails the test when the transactions run out of order.
+func checkTxnSequential(t *testing.T) {
+	subTxnOne, subTxnTwo := getRandomTransactions(New(),
+		pickTwoTables(map[TableType]struct{}{})...)
+
+	done := make(chan struct{})
+	defer close(done)
+	results := make(chan int)
+	defer close(results)
+
+	oneStarted := make(chan struct{})
+	one := func() {
+		subTxnOne.Run(func(view Database) error {
+			close(oneStarted)
+			time.Sleep(100 * time.Millisecond)
+			select {
+			case results <- 1:
+				return nil
+			case <-done:
+				return nil
+			}
+		})
+	}
+
+	two := func() {
+		subTxnTwo.Run(func(view Database) error {
+			select {
+			case results <- 2:
+				return nil
+			case <-done:
+				return nil
+			}
+		})
+	}
+
+	check := make(chan bool)
+	defer close(check)
+	go func() {
+		first := <-results
+		second := <-results
+
+		check <- (first == 1 && second == 2)
+	}()
+
+	go one()
+	<-oneStarted
+	go two()
+
+	timeout := time.After(time.Second)
+	select {
+	case <-timeout:
+		t.Fatal("Transactions timed out")
+	case success := <-check:
+		if !success {
+			t.Fatal("Transactions ran concurrently")
+		}
+	}
+}
+
+func getRandomTransactions(conn Conn, tables ...TableType) (Transaction, Transaction) {
+	taken := map[TableType]struct{}{}
+	firstTables := pickTwoTables(taken)
+	secondTables := pickTwoTables(taken)
+
+	firstTables = append(firstTables, tables...)
+	secondTables = append(secondTables, tables...)
+
+	return conn.Txn(firstTables...), conn.Txn(secondTables...)
+}
+
+func pickTwoTables(taken map[TableType]struct{}) []TableType {
+	tableCount := int32(len(AllTables))
+	chosen := []TableType{}
+	for len(chosen) < 2 {
+		tt := AllTables[rand.Int31n(tableCount)]
+		if _, ok := taken[tt]; ok {
+			continue
+		}
+
+		taken[tt] = struct{}{}
+		chosen = append(chosen, tt)
+	}
+
+	return chosen
+}
+
 func TestTrigger(t *testing.T) {
 	conn := New()
 
@@ -138,7 +380,7 @@ func TestTrigger(t *testing.T) {
 	triggerNoRecv(t, ct)
 	triggerNoRecv(t, ct2)
 
-	err := conn.Transact(func(db Database) error {
+	err := conn.Txn(AllTables...).Run(func(db Database) error {
 		db.InsertMachine()
 		return nil
 	})
@@ -153,7 +395,7 @@ func TestTrigger(t *testing.T) {
 	triggerNoRecv(t, ct2)
 
 	mt2.Stop()
-	err = conn.Transact(func(db Database) error {
+	err = conn.Txn(AllTables...).Run(func(db Database) error {
 		db.InsertMachine()
 		return nil
 	})
@@ -183,7 +425,7 @@ func TestTriggerTickStop(t *testing.T) {
 	triggerRecv(t, mt)
 
 	triggerNoRecv(t, mt)
-	err := conn.Transact(func(db Database) error {
+	err := conn.Txn(AllTables...).Run(func(db Database) error {
 		db.InsertMachine()
 		return nil
 	})
@@ -195,7 +437,7 @@ func TestTriggerTickStop(t *testing.T) {
 	triggerRecv(t, mt)
 
 	mt.Stop()
-	err = conn.Transact(func(db Database) error {
+	err = conn.Txn(AllTables...).Run(func(db Database) error {
 		db.InsertMachine()
 		return nil
 	})
@@ -312,7 +554,7 @@ func TestGetClusterNamespace(t *testing.T) {
 	assert.NotNil(t, err)
 	assert.Exactly(t, ns, "")
 
-	conn.Transact(func(view Database) error {
+	conn.Txn(AllTables...).Run(func(view Database) error {
 		clst := view.InsertCluster()
 		clst.Namespace = "test"
 		view.Commit(clst)

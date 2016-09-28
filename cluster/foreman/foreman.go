@@ -47,7 +47,7 @@ func Init(conn db.Conn) {
 	}
 	minions = map[string]*minion{}
 
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.MachineTable).Run(func(view db.Database) error {
 		machines := view.SelectFromMachine(func(m db.Machine) bool {
 			return m.PublicIP != "" && m.PrivateIP != "" && m.CloudID != ""
 		})
@@ -77,7 +77,9 @@ func Init(conn db.Conn) {
 func RunOnce(conn db.Conn) {
 	var spec string
 	var machines []db.Machine
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.ClusterTable,
+		db.MachineTable).Run(func(view db.Database) error {
+
 		machines = view.SelectFromMachine(func(m db.Machine) bool {
 			return m.PublicIP != "" && m.PrivateIP != "" && m.CloudID != ""
 		})
@@ -101,7 +103,8 @@ func RunOnce(conn db.Conn) {
 		}
 
 		if connected != m.machine.Connected {
-			conn.Transact(func(view db.Database) error {
+			tr := conn.Txn(db.MachineTable)
+			tr.Run(func(view db.Database) error {
 				m.machine.Connected = connected
 				view.Commit(m.machine)
 				return nil

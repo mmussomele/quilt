@@ -65,27 +65,21 @@ func Run(conn db.Conn, listenAddr string) error {
 
 func (s server) Query(cts context.Context, query *pb.DBQuery) (*pb.QueryReply, error) {
 	var rows interface{}
-	err := s.dbConn.Transact(func(view db.Database) error {
-		switch db.TableType(query.Table) {
-		case db.MachineTable:
-			rows = view.SelectFromMachine(nil)
-		case db.ContainerTable:
-			rows = view.SelectFromContainer(nil)
-		case db.EtcdTable:
-			rows = view.SelectFromEtcd(nil)
-		case db.ConnectionTable:
-			rows = view.SelectFromConnection(nil)
-		case db.LabelTable:
-			rows = view.SelectFromLabel(nil)
-		case db.ClusterTable:
-			rows = view.SelectFromCluster(nil)
-		default:
-			return fmt.Errorf("unrecognized table: %s", query.Table)
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
+	switch db.TableType(query.Table) {
+	case db.MachineTable:
+		rows = s.dbConn.SelectFromMachine(nil)
+	case db.ContainerTable:
+		rows = s.dbConn.SelectFromContainer(nil)
+	case db.EtcdTable:
+		rows = s.dbConn.SelectFromEtcd(nil)
+	case db.ConnectionTable:
+		rows = s.dbConn.SelectFromConnection(nil)
+	case db.LabelTable:
+		rows = s.dbConn.SelectFromLabel(nil)
+	case db.ClusterTable:
+		rows = s.dbConn.SelectFromCluster(nil)
+	default:
+		return nil, fmt.Errorf("unrecognized table: %s", query.Table)
 	}
 
 	json, err := json.Marshal(rows)
@@ -109,7 +103,7 @@ func (s server) Deploy(cts context.Context, deployReq *pb.DeployRequest) (
 			"machines", ipdef.MaxMinionCount)
 	}
 
-	err = s.dbConn.Transact(func(view db.Database) error {
+	err = s.dbConn.Txn(db.ClusterTable).Run(func(view db.Database) error {
 		cluster, err := view.GetCluster()
 		if err != nil {
 			cluster = view.InsertCluster()

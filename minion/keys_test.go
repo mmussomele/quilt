@@ -44,7 +44,7 @@ func TestSyncKeys(t *testing.T) {
 		}
 
 		conn := db.New()
-		conn.Transact(func(view db.Database) error {
+		conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 			m := view.InsertMinion()
 			m.Self = true
 			m.AuthorizedKeys = test.dbKeys
@@ -70,7 +70,7 @@ func TestSyncKeysError(t *testing.T) {
 
 	fs := afero.NewMemMapFs()
 	util.AppFs = afero.NewReadOnlyFs(fs)
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		m := view.InsertMinion()
 		m.Self = true
 		m.AuthorizedKeys = "keys"

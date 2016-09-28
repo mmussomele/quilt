@@ -20,7 +20,7 @@ func TestBoot(t *testing.T) {
 
 	assert.Zero(t, clients.newCalls)
 
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		m := view.InsertMachine()
 		m.PublicIP = "1.1.1.1"
 		m.PrivateIP = "1.1.1.1."
@@ -39,7 +39,7 @@ func TestBoot(t *testing.T) {
 	_, ok = clients.clients["1.1.1.1"]
 	assert.True(t, ok)
 
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		m := view.InsertMachine()
 		m.PublicIP = "2.2.2.2"
 		m.PrivateIP = "2.2.2.2"
@@ -69,7 +69,7 @@ func TestBoot(t *testing.T) {
 	_, ok = clients.clients["1.1.1.1"]
 	assert.True(t, ok)
 
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		machines := view.SelectFromMachine(func(m db.Machine) bool {
 			return m.PublicIP == "1.1.1.1"
 		})
@@ -101,7 +101,7 @@ func TestBoot(t *testing.T) {
 
 func TestBootEtcd(t *testing.T) {
 	conn, clients := startTest()
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		m := view.InsertMachine()
 		m.Role = db.Master
 		m.PublicIP = "m1-pub"
@@ -120,7 +120,7 @@ func TestBootEtcd(t *testing.T) {
 	RunOnce(conn)
 	assert.Equal(t, []string{"m1-priv"}, clients.clients["w1-pub"].mc.EtcdMembers)
 
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		m := view.InsertMachine()
 		m.Role = db.Master
 		m.PublicIP = "m2-pub"
@@ -135,7 +135,7 @@ func TestBootEtcd(t *testing.T) {
 	assert.Contains(t, etcdMembers, "m1-priv")
 	assert.Contains(t, etcdMembers, "m2-priv")
 
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		var toDelete = view.SelectFromMachine(func(m db.Machine) bool {
 			return m.PrivateIP == "m1-priv"
 		})[0]
@@ -149,7 +149,7 @@ func TestBootEtcd(t *testing.T) {
 
 func TestInitForeman(t *testing.T) {
 	conn := startTestWithRole(pb.MinionConfig_WORKER)
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		m := view.InsertMachine()
 		m.PublicIP = "2.2.2.2"
 		m.PrivateIP = "2.2.2.2"
@@ -176,7 +176,7 @@ func TestConfigConsistency(t *testing.T) {
 
 	conn, clients := startTest()
 	var master, worker db.Machine
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		master = view.InsertMachine()
 		master.PublicIP = "1.1.1.1"
 		master.PrivateIP = master.PublicIP
@@ -191,7 +191,7 @@ func TestConfigConsistency(t *testing.T) {
 	})
 
 	Init(conn)
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		master.Role = db.Master
 		worker.Role = db.Worker
 		view.Commit(master)
@@ -229,7 +229,7 @@ func TestConfigConsistency(t *testing.T) {
 	checkRoles()
 
 	// Ensure that the DB machines have the correct roles as well.
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		machines := view.SelectFromMachine(nil)
 		for _, m := range machines {
 			if m.PublicIP == "1.1.1.1" {

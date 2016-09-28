@@ -21,7 +21,7 @@ func TestNone(t *testing.T) {
 		t.Errorf("exec = %s; want <empty>", spew.Sdump(ctx.execs))
 	}
 
-	ctx.conn.Transact(func(view db.Database) error {
+	ctx.conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		m, _ := view.MinionSelf()
 		e := view.SelectFromEtcd(nil)[0]
 		m.PrivateIP = "1.2.3.4"
@@ -46,7 +46,7 @@ func TestMaster(t *testing.T) {
 	ctx := initTest()
 	ip := "1.2.3.4"
 	etcdIPs := []string{""}
-	ctx.conn.Transact(func(view db.Database) error {
+	ctx.conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		m, _ := view.MinionSelf()
 		e := view.SelectFromEtcd(nil)[0]
 		m.Role = db.Master
@@ -74,7 +74,7 @@ func TestMaster(t *testing.T) {
 	/* Change IP, etcd IPs, and become the leader. */
 	ip = "8.8.8.8"
 	etcdIPs = []string{"8.8.8.8"}
-	ctx.conn.Transact(func(view db.Database) error {
+	ctx.conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		m, _ := view.MinionSelf()
 		e := view.SelectFromEtcd(nil)[0]
 		m.Role = db.Master
@@ -101,7 +101,7 @@ func TestMaster(t *testing.T) {
 	}
 
 	/* Lose leadership. */
-	ctx.conn.Transact(func(view db.Database) error {
+	ctx.conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		e := view.SelectFromEtcd(nil)[0]
 		e.Leader = false
 		view.Commit(e)
@@ -126,7 +126,7 @@ func TestWorker(t *testing.T) {
 	ctx := initTest()
 	ip := "1.2.3.4"
 	etcdIPs := []string{ip}
-	ctx.conn.Transact(func(view db.Database) error {
+	ctx.conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		m, _ := view.MinionSelf()
 		e := view.SelectFromEtcd(nil)[0]
 		m.Role = db.Worker
@@ -152,7 +152,7 @@ func TestWorker(t *testing.T) {
 	}
 
 	leaderIP := "5.6.7.8"
-	ctx.conn.Transact(func(view db.Database) error {
+	ctx.conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		m, _ := view.MinionSelf()
 		e := view.SelectFromEtcd(nil)[0]
 		m.Role = db.Worker
@@ -187,7 +187,7 @@ func TestChange(t *testing.T) {
 	ip := "1.2.3.4"
 	leaderIP := "5.6.7.8"
 	etcdIPs := []string{ip, leaderIP}
-	ctx.conn.Transact(func(view db.Database) error {
+	ctx.conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		m, _ := view.MinionSelf()
 		e := view.SelectFromEtcd(nil)[0]
 		m.Role = db.Worker
@@ -217,7 +217,7 @@ func TestChange(t *testing.T) {
 	}
 
 	ctx.fd.md.ResetExec()
-	ctx.conn.Transact(func(view db.Database) error {
+	ctx.conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		m, _ := view.MinionSelf()
 		m.Role = db.Master
 		view.Commit(m)
@@ -237,7 +237,7 @@ func TestChange(t *testing.T) {
 		t.Errorf("exec = %s; want <empty>", spew.Sdump(ctx.execs))
 	}
 
-	ctx.conn.Transact(func(view db.Database) error {
+	ctx.conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		m, _ := view.MinionSelf()
 		m.Role = db.Worker
 		view.Commit(m)
@@ -266,7 +266,7 @@ func TestEtcdAdd(t *testing.T) {
 	ctx := initTest()
 	ip := "1.2.3.4"
 	etcdIPs := []string{ip, "5.6.7.8"}
-	ctx.conn.Transact(func(view db.Database) error {
+	ctx.conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		m, _ := view.MinionSelf()
 		e := view.SelectFromEtcd(nil)[0]
 		m.Role = db.Master
@@ -289,7 +289,7 @@ func TestEtcdAdd(t *testing.T) {
 
 	// Add a new master
 	etcdIPs = append(etcdIPs, "9.10.11.12")
-	ctx.conn.Transact(func(view db.Database) error {
+	ctx.conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		m, _ := view.MinionSelf()
 		e := view.SelectFromEtcd(nil)[0]
 		m.Role = db.Master
@@ -314,7 +314,7 @@ func TestEtcdRemove(t *testing.T) {
 	ctx := initTest()
 	ip := "1.2.3.4"
 	etcdIPs := []string{ip, "5.6.7.8"}
-	ctx.conn.Transact(func(view db.Database) error {
+	ctx.conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		m, _ := view.MinionSelf()
 		e := view.SelectFromEtcd(nil)[0]
 		m.Role = db.Master
@@ -337,7 +337,7 @@ func TestEtcdRemove(t *testing.T) {
 
 	// Remove a master
 	etcdIPs = etcdIPs[1:]
-	ctx.conn.Transact(func(view db.Database) error {
+	ctx.conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		m, _ := view.MinionSelf()
 		e := view.SelectFromEtcd(nil)[0]
 		m.Role = db.Master
@@ -375,7 +375,7 @@ func initTest() *testCtx {
 	ctx.sv.conn = ctx.conn
 	ctx.sv.dk = ctx.fd.Client
 
-	ctx.conn.Transact(func(view db.Database) error {
+	ctx.conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		m := view.InsertMinion()
 		m.Self = true
 		view.Commit(m)

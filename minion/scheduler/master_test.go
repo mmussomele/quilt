@@ -12,7 +12,7 @@ func TestPlaceContainers(t *testing.T) {
 	t.Parallel()
 	conn := db.New()
 
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		m := view.InsertMinion()
 		m.PrivateIP = "1"
 		m.Role = db.Worker
@@ -27,12 +27,12 @@ func TestPlaceContainers(t *testing.T) {
 		return nil
 	})
 
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		placeContainers(view)
 		return nil
 	})
 
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		dbcs := view.SelectFromContainer(nil)
 		assert.Len(t, dbcs, 1)
 		assert.Equal(t, "1", dbcs[0].Minion)

@@ -31,7 +31,7 @@ func TestWriteMinion(t *testing.T) {
 	assert.Empty(t, val)
 
 	// Minion without a PrivateIP
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		m := view.InsertMinion()
 		m.Self = true
 		m.Role = db.Master
@@ -47,7 +47,7 @@ func TestWriteMinion(t *testing.T) {
 	assert.NotNil(t, err)
 	assert.Empty(t, val)
 
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		m, _ := view.MinionSelf()
 		m.PrivateIP = ip
 		view.Commit(m)
@@ -173,7 +173,7 @@ func TestUpdateSubnet(t *testing.T) {
 	}()
 
 	var m db.Minion
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		m = view.InsertMinion()
 		m.PrivateIP = "1.2.3.4"
 		m.Role = db.Worker

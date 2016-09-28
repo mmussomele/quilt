@@ -181,7 +181,9 @@ func (clst cluster) join() (joinResult, error) {
 		return res, err
 	}
 
-	err = clst.conn.Transact(func(view db.Database) error {
+	err = clst.conn.Txn(db.ACLTable, db.ClusterTable,
+		db.MachineTable).Run(func(view db.Database) error {
+
 		namespace, err := view.GetClusterNamespace()
 		if err != nil {
 			log.WithError(err).Error("Failed to get namespace")

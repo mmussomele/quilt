@@ -89,7 +89,9 @@ func runNetwork(conn db.Conn, store Store) {
 
 		leader := false
 		var containers []db.Container
-		conn.Transact(func(view db.Database) error {
+		conn.Txn(db.ContainerTable, db.EtcdTable, db.LabelTable,
+			db.MinionTable).Run(func(view db.Database) error {
+
 			leader = view.EtcdLeader()
 			containers = view.SelectFromContainer(func(c db.Container) bool {
 				return c.Minion != ""

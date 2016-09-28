@@ -22,7 +22,7 @@ func TestUpdateEtcdContainers(t *testing.T) {
 	conn := db.New()
 	var containers []db.Container
 	idIPMap := map[string]string{}
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		for i := 2; i < 5; i++ {
 			c := view.InsertContainer()
 			si := strconv.Itoa(i)
@@ -84,7 +84,7 @@ func TestUpdateEtcdContainers(t *testing.T) {
 	// add a new container with a bad ip to test ip syncing
 	badEtcdSlice = append(badEtcdSlice, storeContainer{StitchID: 8})
 	cs = append(cs, storeContainer{StitchID: 8})
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		c := view.InsertContainer()
 		c.StitchID = 8
 		c.IP = "10.0.0.0"
@@ -123,7 +123,7 @@ func TestUpdateEtcdLabel(t *testing.T) {
 	store.Mkdir(minionDir, 0)
 	conn := db.New()
 	var containers []db.Container
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		for i := 2; i < 5; i++ {
 			c := view.InsertContainer()
 			si := strconv.Itoa(i)
@@ -155,7 +155,7 @@ func TestUpdateEtcdLabel(t *testing.T) {
 	// etcd and the db agree, there should be no writes
 	assert.Equal(t, 0, *store.writes)
 
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		c := view.InsertContainer()
 		c.DockerID = "6"
 		c.Labels = []string{"2", "3"}
@@ -202,7 +202,7 @@ func TestUpdateEtcdLabel(t *testing.T) {
 
 func TestUpdateLeaderDBC(t *testing.T) {
 	conn := db.New()
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		dbc := view.InsertContainer()
 		dbc.StitchID = 1
 		view.Commit(dbc)
@@ -223,7 +223,7 @@ func TestUpdateLeaderDBC(t *testing.T) {
 
 func TestUpdateWorkerDBC(t *testing.T) {
 	conn := db.New()
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		testUpdateWorkerDBC(t, view)
 		return nil
 	})
@@ -338,7 +338,7 @@ func TestContainerJoinScore(t *testing.T) {
 
 func TestUpdateDBLabels(t *testing.T) {
 	conn := db.New()
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		testUpdateDBLabels(t, view)
 		return nil
 	})

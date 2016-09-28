@@ -178,7 +178,7 @@ func (ovs OvsdbClient) ListDbs() ([]string, error) {
 
 // Transact performs the provided Operation's on the database
 // RFC 7047 : transact
-func (ovs OvsdbClient) Transact(database string, operation ...Operation) ([]OperationResult, error) {
+func (ovs OvsdbClient) Run(database string, operation ...Operation) ([]OperationResult, error) {
 	var reply []OperationResult
 	db, ok := ovs.Schema[database]
 	if !ok {

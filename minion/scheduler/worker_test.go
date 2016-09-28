@@ -19,7 +19,7 @@ func TestRunWorker(t *testing.T) {
 
 	md, dk := docker.NewMock()
 	conn := db.New()
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		container := view.InsertContainer()
 		container.Image = "Image"
 		container.Minion = "1.2.3.4"

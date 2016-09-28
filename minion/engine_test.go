@@ -90,7 +90,7 @@ func testContainerTxn(t *testing.T, conn db.Conn, spec string) {
 	assert.Nil(t, err)
 
 	var containers []db.Container
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		updatePolicy(view, db.Master, compiled.String())
 		containers = view.SelectFromContainer(nil)
 		return nil
@@ -164,7 +164,7 @@ func testConnectionTxn(t *testing.T, conn db.Conn, spec string) {
 	assert.Nil(t, err)
 
 	var connections []db.Connection
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		updatePolicy(view, db.Master, compiled.String())
 		connections = view.SelectFromConnection(nil)
 		return nil
@@ -207,7 +207,7 @@ func TestPlacementTxn(t *testing.T) {
 		assert.Nil(t, err)
 
 		placements := map[db.Placement]struct{}{}
-		conn.Transact(func(view db.Database) error {
+		conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 			updatePolicy(view, db.Master, compiled.String())
 			res := view.SelectFromPlacement(nil)
 

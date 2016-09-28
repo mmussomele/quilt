@@ -107,7 +107,9 @@ func runWorker(conn db.Conn, dk docker.Client) {
 	// XXX: By doing all the work within a transaction, we (kind of) guarantee that
 	// containers won't be removed while we're in the process of setting them up.
 	// Not ideal, but for now it's good enough.
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.ConnectionTable, db.ContainerTable, db.LabelTable,
+		db.MinionTable).Run(func(view db.Database) error {
+
 		if !checkSupervisorInit(view) {
 			// Avoid a race condition where minion.SupervisorInit changed to
 			// false since we checked above.

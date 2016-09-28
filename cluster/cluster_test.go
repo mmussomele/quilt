@@ -184,7 +184,7 @@ func TestSync(t *testing.T) {
 	// Test initial boot
 	clst := newTestCluster("ns")
 	setNamespace(clst.conn, "ns")
-	clst.conn.Transact(func(view db.Database) error {
+	clst.conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		m := view.InsertMachine()
 		m.Role = db.Master
 		m.Provider = FakeAmazon
@@ -196,7 +196,7 @@ func TestSync(t *testing.T) {
 	checkSync(clst, FakeAmazon, []bootRequest{amazonLargeBoot}, noStops)
 
 	// Test adding a machine with the same provider
-	clst.conn.Transact(func(view db.Database) error {
+	clst.conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		m := view.InsertMachine()
 		m.Role = db.Master
 		m.Provider = FakeAmazon
@@ -208,7 +208,7 @@ func TestSync(t *testing.T) {
 	checkSync(clst, FakeAmazon, []bootRequest{amazonXLargeBoot}, noStops)
 
 	// Test adding a machine with a different provider
-	clst.conn.Transact(func(view db.Database) error {
+	clst.conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		m := view.InsertMachine()
 		m.Role = db.Master
 		m.Provider = FakeVagrant
@@ -221,7 +221,7 @@ func TestSync(t *testing.T) {
 
 	// Test removing a machine
 	var toRemove db.Machine
-	clst.conn.Transact(func(view db.Database) error {
+	clst.conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		toRemove = view.SelectFromMachine(func(m db.Machine) bool {
 			return m.Provider == FakeAmazon && m.Size == "m4.xlarge"
 		})[0]
@@ -231,7 +231,7 @@ func TestSync(t *testing.T) {
 	checkSync(clst, FakeAmazon, noBoots, []string{toRemove.CloudID})
 
 	// Test removing and adding a machine
-	clst.conn.Transact(func(view db.Database) error {
+	clst.conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		toRemove = view.SelectFromMachine(func(m db.Machine) bool {
 			return m.Provider == FakeAmazon && m.Size == "m4.large"
 		})[0]
@@ -313,7 +313,7 @@ func TestUpdateCluster(t *testing.T) {
 	assert.Empty(t, amzn.stopRequests)
 	assert.Equal(t, "ns1", amzn.namespace)
 
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		m := view.InsertMachine()
 		m.Provider = FakeAmazon
 		m.Size = "size1"
@@ -337,7 +337,7 @@ func TestUpdateCluster(t *testing.T) {
 	assert.Equal(t, "ns1", amzn.namespace)
 	amzn.clearLogs()
 
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		dbms := view.SelectFromMachine(nil)
 		dbms[0].Size = "size2"
 		view.Commit(dbms[0])
@@ -365,7 +365,7 @@ func TestUpdateCluster(t *testing.T) {
 }
 
 func setNamespace(conn db.Conn, ns string) {
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		clst, err := view.GetCluster()
 		if err != nil {
 			clst = view.InsertCluster()

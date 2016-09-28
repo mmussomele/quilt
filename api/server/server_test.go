@@ -23,7 +23,7 @@ func TestMachineResponse(t *testing.T) {
 	t.Parallel()
 
 	conn := db.New()
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		m := view.InsertMachine()
 		m.Role = db.Master
 		m.Provider = db.Amazon
@@ -46,7 +46,7 @@ func TestContainerResponse(t *testing.T) {
 	t.Parallel()
 
 	conn := db.New()
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		c := view.InsertContainer()
 		c.DockerID = "docker-id"
 		c.Image = "image"
@@ -96,7 +96,7 @@ func TestDeploy(t *testing.T) {
 	assert.NoError(t, err)
 
 	var spec string
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		clst, err := view.GetCluster()
 		assert.NoError(t, err)
 		spec = clst.Spec
@@ -135,7 +135,7 @@ func TestVagrantDeployment(t *testing.T) {
 	assert.Error(t, err, vagrantErrMsg)
 
 	var spec string
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		clst, err := view.GetCluster()
 		assert.NoError(t, err)
 		spec = clst.Spec

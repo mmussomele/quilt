@@ -2,6 +2,7 @@ package db
 
 import (
 	"reflect"
+	"sync"
 )
 
 // TableType represents a table in the database.
@@ -34,7 +35,10 @@ var PlacementTable = TableType(reflect.TypeOf(Placement{}).String())
 // ACLTable is the type of the ACL table.
 var ACLTable = TableType(reflect.TypeOf(ACL{}).String())
 
-var allTables = []TableType{ClusterTable, MachineTable, ContainerTable, MinionTable,
+// AllTables is a slice of all the db TableTypes. It is used primarily for tests,
+// where there is no reason to put lots of thought into which tables a Transaction
+// should use.
+var AllTables = []TableType{ClusterTable, MachineTable, ContainerTable, MinionTable,
 	ConnectionTable, LabelTable, EtcdTable, PlacementTable, ACLTable}
 
 type table struct {
@@ -42,6 +46,7 @@ type table struct {
 
 	triggers    map[Trigger]struct{}
 	shouldAlert bool
+	sync.Mutex
 }
 
 func newTable() *table {

@@ -29,7 +29,7 @@ func watchLeader(conn db.Conn, store Store) {
 	trigg := conn.TriggerTick(tickRate, db.EtcdTable)
 	for {
 		leader, _ := store.Get(leaderKey)
-		conn.Transact(func(view db.Database) error {
+		conn.Txn(db.EtcdTable).Run(func(view db.Database) error {
 			etcdRows := view.SelectFromEtcd(nil)
 			if len(etcdRows) == 1 {
 				etcdRows[0].LeaderIP = leader
@@ -99,7 +99,7 @@ func commitLeader(conn db.Conn, leader bool, ip ...string) {
 		panic("Not Reached")
 	}
 
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.EtcdTable).Run(func(view db.Database) error {
 		etcdRows := view.SelectFromEtcd(nil)
 		if len(etcdRows) == 1 {
 			etcdRows[0].Leader = leader

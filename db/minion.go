@@ -30,8 +30,9 @@ func (db Database) InsertMinion() Minion {
 
 // SelectFromMinion gets all minions in the database that satisfy the 'check'.
 func (db Database) SelectFromMinion(check func(Minion) bool) []Minion {
+	minionTable := db.accessTable(MinionTable)
 	result := []Minion{}
-	for _, row := range db.tables[MinionTable].rows {
+	for _, row := range minionTable.rows {
 		if check == nil || check(row.(Minion)) {
 			result = append(result, row.(Minion))
 		}
@@ -63,7 +64,7 @@ func (conn Conn) MinionSelf() (Minion, error) {
 	var m Minion
 	var err error
 
-	conn.Transact(func(view Database) error {
+	conn.Txn(MinionTable).Run(func(view Database) error {
 		m, err = view.MinionSelf()
 		return nil
 	})
@@ -74,7 +75,7 @@ func (conn Conn) MinionSelf() (Minion, error) {
 // SelectFromMinion gets all minions in the database that satisfy the 'check'.
 func (conn Conn) SelectFromMinion(check func(Minion) bool) []Minion {
 	var minions []Minion
-	conn.Transact(func(view Database) error {
+	conn.Txn(MinionTable).Run(func(view Database) error {
 		minions = view.SelectFromMinion(check)
 		return nil
 	})

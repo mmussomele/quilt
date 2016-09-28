@@ -56,7 +56,7 @@ func (s server) GetMinionConfig(cts context.Context,
 		cfg.Role = db.RoleToPB(db.None)
 	}
 
-	s.Transact(func(view db.Database) error {
+	s.Txn(db.EtcdTable).Run(func(view db.Database) error {
 		if etcdRow, err := view.GetEtcd(); err == nil {
 			cfg.EtcdMembers = etcdRow.EtcdIPs
 		}
@@ -68,7 +68,9 @@ func (s server) GetMinionConfig(cts context.Context,
 
 func (s server) SetMinionConfig(ctx context.Context,
 	msg *pb.MinionConfig) (*pb.Reply, error) {
-	go s.Transact(func(view db.Database) error {
+	go s.Txn(db.EtcdTable,
+		db.MinionTable).Run(func(view db.Database) error {
+
 		minion, err := view.MinionSelf()
 		if err != nil {
 			log.Info("Received initial configuation.")

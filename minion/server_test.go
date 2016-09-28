@@ -77,7 +77,7 @@ func checkEtcdEquals(t *testing.T, conn db.Conn, exp db.Etcd) {
 	timeout := time.After(1 * time.Second)
 	var actual db.Etcd
 	for {
-		conn.Transact(func(view db.Database) error {
+		conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 			actual, _ = view.GetEtcd()
 			return nil
 		})
@@ -105,7 +105,7 @@ func TestGetMinionConfig(t *testing.T) {
 	assert.Equal(t, pb.MinionConfig{Role: pb.MinionConfig_NONE}, *cfg)
 
 	// Should only return config for "self".
-	s.Conn.Transact(func(view db.Database) error {
+	s.Conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		m := view.InsertMinion()
 		m.Self = false
 		m.Spec = "spec"
@@ -123,7 +123,7 @@ func TestGetMinionConfig(t *testing.T) {
 	assert.Equal(t, pb.MinionConfig{Role: pb.MinionConfig_NONE}, *cfg)
 
 	// Test returning a full config.
-	s.Conn.Transact(func(view db.Database) error {
+	s.Conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		m := view.SelectFromMinion(nil)[0]
 		m.Self = true
 		view.Commit(m)

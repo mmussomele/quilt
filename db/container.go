@@ -39,8 +39,9 @@ func (db Database) InsertContainer() Container {
 
 // SelectFromContainer gets all containers in the database that satisfy 'check'.
 func (db Database) SelectFromContainer(check func(Container) bool) []Container {
+	containerTable := db.accessTable(ContainerTable)
 	var result []Container
-	for _, row := range db.tables[ContainerTable].rows {
+	for _, row := range containerTable.rows {
 		if check == nil || check(row.(Container)) {
 			result = append(result, row.(Container))
 		}
@@ -52,7 +53,7 @@ func (db Database) SelectFromContainer(check func(Container) bool) []Container {
 // SelectFromContainer gets all containers in the database that satisfy the 'check'.
 func (conn Conn) SelectFromContainer(check func(Container) bool) []Container {
 	var containers []Container
-	conn.Transact(func(view Database) error {
+	conn.Txn(ContainerTable).Run(func(view Database) error {
 		containers = view.SelectFromContainer(check)
 		return nil
 	})

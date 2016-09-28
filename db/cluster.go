@@ -22,13 +22,24 @@ func (db Database) InsertCluster() Cluster {
 
 // SelectFromCluster gets all clusters in the database that satisfy 'check'.
 func (db Database) SelectFromCluster(check func(Cluster) bool) []Cluster {
+	clusterTable := db.accessTable(ClusterTable)
 	result := []Cluster{}
-	for _, row := range db.tables[ClusterTable].rows {
+	for _, row := range clusterTable.rows {
 		if check == nil || check(row.(Cluster)) {
 			result = append(result, row.(Cluster))
 		}
 	}
 	return result
+}
+
+// SelectFromCluster gets all clusters in the database that satisfy 'check'.
+func (conn Conn) SelectFromCluster(check func(Cluster) bool) []Cluster {
+	var clusters []Cluster
+	conn.Txn(ClusterTable).Run(func(view Database) error {
+		clusters = view.SelectFromCluster(check)
+		return nil
+	})
+	return clusters
 }
 
 // GetCluster gets the cluster from the database. There should only ever be a single
@@ -57,7 +68,7 @@ func (db Database) GetClusterNamespace() (string, error) {
 // GetClusterNamespace returns the namespace of the single cluster object in the cluster
 // table.  Otherwise it returns an error.
 func (conn Conn) GetClusterNamespace() (namespace string, err error) {
-	conn.Transact(func(db Database) error {
+	conn.Txn(ClusterTable).Run(func(db Database) error {
 		namespace, err = db.GetClusterNamespace()
 		return nil
 	})

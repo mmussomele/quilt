@@ -8,7 +8,7 @@ import (
 )
 
 func (conn Conn) runLogger() {
-	for _, t := range allTables {
+	for _, t := range AllTables {
 		t := t
 		go func() {
 			for range conn.Trigger(t).C {
@@ -21,7 +21,7 @@ func (conn Conn) runLogger() {
 func (conn Conn) logTable(t TableType) {
 	var truncated bool
 	var strs []string
-	conn.Transact(func(view Database) error {
+	conn.Txn(AllTables...).Run(func(view Database) error {
 		var rows []row
 		for _, v := range view.tables[t].rows {
 			if len(rows) > 50 {

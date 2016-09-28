@@ -20,7 +20,9 @@ type context struct {
 }
 
 func runMaster(conn db.Conn) {
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.ContainerTable, db.EtcdTable, db.MinionTable,
+		db.PlacementTable).Run(func(view db.Database) error {
+
 		if view.EtcdLeader() {
 			placeContainers(view)
 		}

@@ -53,7 +53,9 @@ func runMaster(conn db.Conn) {
 	var labels []db.Label
 	var containers []db.Container
 	var connections []db.Connection
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.ConnectionTable, db.ContainerTable, db.EtcdTable,
+		db.LabelTable, db.MinionTable).Run(func(view db.Database) error {
+
 		init = checkSupervisorInit(view)
 		leader = view.EtcdLeader()
 

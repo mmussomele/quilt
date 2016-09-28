@@ -32,7 +32,9 @@ func runWorker(conn db.Conn, dk docker.Client, myIP string, subnet net.IPNet) {
 			return
 		}
 
-		conn.Transact(func(view db.Database) error {
+		conn.Txn(db.ContainerTable,
+			db.MinionTable).Run(func(view db.Database) error {
+
 			_, err := view.MinionSelf()
 			if err != nil {
 				return nil

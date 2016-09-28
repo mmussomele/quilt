@@ -83,7 +83,7 @@ func readMinion(conn db.Conn, store Store) {
 		storeMinions = append(storeMinions, m)
 	}
 
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.MinionTable).Run(func(view db.Database) error {
 		dbms, sms := filterSelf(view.SelectFromMinion(nil), storeMinions)
 		del, add := diffMinion(dbms, sms)
 
@@ -189,6 +189,7 @@ func generateSubnet(store Store, minion db.Minion) (net.IPNet, error) {
 }
 
 func updateSubnet(conn db.Conn, store Store, minion db.Minion) db.Minion {
+	tr := conn.Txn(db.MinionTable)
 	if minion.Subnet != "" {
 		_, subnet, err := net.ParseCIDR(minion.Subnet)
 		if err != nil {
@@ -203,7 +204,7 @@ func updateSubnet(conn db.Conn, store Store, minion db.Minion) db.Minion {
 			"generating a new one.", minion.Subnet)
 
 		// Invalidate the subnet until we get a new one.
-		minion = setMinionSubnet(conn, "")
+		minion = setMinionSubnet(tr, "")
 	}
 
 	// If we failed to refresh, someone took our subnet or we never had one.
@@ -219,13 +220,13 @@ func updateSubnet(conn db.Conn, store Store, minion db.Minion) db.Minion {
 		sleep(time.Second)
 	}
 
-	return setMinionSubnet(conn, minion.Subnet)
+	return setMinionSubnet(tr, minion.Subnet)
 }
 
-func setMinionSubnet(conn db.Conn, subnet string) db.Minion {
+func setMinionSubnet(tr db.Transaction, subnet string) db.Minion {
 	var err error
 	var minion db.Minion
-	conn.Transact(func(view db.Database) error {
+	tr.Run(func(view db.Database) error {
 		minion, err = view.MinionSelf()
 		if err != nil {
 			log.WithError(err).Error("Failed to get self")

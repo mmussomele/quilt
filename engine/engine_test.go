@@ -40,7 +40,7 @@ func TestEngine(t *testing.T) {
 	assert.Equal(t, 5, len(workers))
 
 	/* Verify that external writes stick around. */
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		masters := view.SelectFromMachine(func(m db.Machine) bool {
 			return m.Role == db.Master
 		})
@@ -147,7 +147,7 @@ func TestSort(t *testing.T) {
 	updateStitch(t, conn, prog(t, pre+`
 	deployment.deploy(baseMachine.asMaster().replicate(3));
 	deployment.deploy(baseMachine.asWorker().replicate(1));`))
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		machines := view.SelectFromMachine(func(m db.Machine) bool {
 			return m.Role == db.Master
 		})
@@ -166,7 +166,7 @@ func TestSort(t *testing.T) {
 	updateStitch(t, conn, prog(t, pre+`
 	deployment.deploy(baseMachine.asMaster().replicate(2));
 	deployment.deploy(baseMachine.asWorker().replicate(1));`))
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		machines := view.SelectFromMachine(func(m db.Machine) bool {
 			return m.Role == db.Master
 		})
@@ -182,7 +182,7 @@ func TestSort(t *testing.T) {
 	updateStitch(t, conn, prog(t, pre+`
 	deployment.deploy(baseMachine.asMaster().replicate(1));
 	deployment.deploy(baseMachine.asWorker().replicate(1));`))
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		machines := view.SelectFromMachine(func(m db.Machine) bool {
 			return m.Role == db.Master
 		})
@@ -234,7 +234,7 @@ func prog(t *testing.T, code string) stitch.Stitch {
 }
 
 func selectMachines(conn db.Conn) (masters, workers []db.Machine) {
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		masters = view.SelectFromMachine(func(m db.Machine) bool {
 			return m.Role == db.Master
 		})
@@ -247,7 +247,7 @@ func selectMachines(conn db.Conn) (masters, workers []db.Machine) {
 }
 
 func selectACL(conn db.Conn) (acl db.ACL, err error) {
-	err = conn.Transact(func(view db.Database) error {
+	err = conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		acl, err = view.GetACL()
 		return err
 	})
@@ -255,7 +255,7 @@ func selectACL(conn db.Conn) (acl db.ACL, err error) {
 }
 
 func updateStitch(t *testing.T, conn db.Conn, stitch stitch.Stitch) {
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		cluster, err := view.GetCluster()
 		if err != nil {
 			cluster = view.InsertCluster()
@@ -264,5 +264,5 @@ func updateStitch(t *testing.T, conn db.Conn, stitch stitch.Stitch) {
 		view.Commit(cluster)
 		return nil
 	})
-	assert.Nil(t, conn.Transact(updateTxn))
+	assert.Nil(t, conn.Txn(db.AllTables...).Run(updateTxn))
 }

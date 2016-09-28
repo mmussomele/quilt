@@ -32,7 +32,7 @@ func (client ovsdbClient) disconnect() {
 
 func (client ovsdbClient) transact(db string, operation ...ovs.Operation) (
 	[]ovs.OperationResult, error) {
-	return client.Transact(db, operation...)
+	return client.Run(db, operation...)
 }
 
 // LPort is a logical port in OVN.

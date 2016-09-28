@@ -256,7 +256,7 @@ func (sv *supervisor) Remove(name string) {
 }
 
 func (sv *supervisor) SetInit(init bool) {
-	sv.conn.Transact(func(view db.Database) error {
+	sv.conn.Txn(db.MinionTable).Run(func(view db.Database) error {
 		self, err := view.MinionSelf()
 		if err == nil {
 			self.SupervisorInit = init

@@ -35,7 +35,7 @@ func TestRunMaster(t *testing.T) {
 	}
 
 	expPorts := []ovsdb.LPort{}
-	conn.Transact(func(view db.Database) error {
+	conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		etcd := view.InsertEtcd()
 		etcd.Leader = true
 		view.Commit(etcd)

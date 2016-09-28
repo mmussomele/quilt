@@ -44,7 +44,9 @@ func Run() {
 	loopLog := util.NewEventTimer("Minion-Update")
 	for range conn.Trigger(db.MinionTable).C {
 		loopLog.LogStart()
-		conn.Transact(func(view db.Database) error {
+		conn.Txn(db.ConnectionTable, db.ContainerTable, db.MinionTable,
+			db.PlacementTable).Run(func(view db.Database) error {
+
 			minion, err := view.MinionSelf()
 			if err != nil {
 				return err
