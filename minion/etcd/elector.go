@@ -25,8 +25,9 @@ func watchLeader(conn db.Conn, store Store) {
 		tickRate = 30
 	}
 
+	conn = conn.Restrict(db.EtcdTable)
 	watch := store.Watch(leaderKey, 1*time.Second)
-	trigg := conn.TriggerTick(tickRate, db.EtcdTable)
+	trigg := conn.TriggerTick(tickRate)
 	for {
 		leader, _ := store.Get(leaderKey)
 		conn.Transact(func(view db.Database) error {
@@ -46,8 +47,9 @@ func watchLeader(conn db.Conn, store Store) {
 }
 
 func campaign(conn db.Conn, store Store) {
+	conn = conn.Restrict(db.EtcdTable, db.MinionTable)
 	watch := store.Watch(leaderKey, 1*time.Second)
-	trigg := conn.TriggerTick(electionTTL/2, db.EtcdTable)
+	trigg := conn.Restrict(db.EtcdTable).TriggerTick(electionTTL / 2)
 
 	for {
 		select {

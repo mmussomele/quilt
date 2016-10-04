@@ -391,11 +391,13 @@ func pickTwoTables(taken map[TableType]struct{}) []TableType {
 
 func TestTrigger(t *testing.T) {
 	conn := New()
+	machineConn := conn.Restrict(MachineTable)
+	clusterConn := conn.Restrict(ClusterTable)
 
-	mt := conn.Trigger(MachineTable)
-	mt2 := conn.Trigger(MachineTable)
-	ct := conn.Trigger(ClusterTable)
-	ct2 := conn.Trigger(ClusterTable)
+	mt := machineConn.Trigger()
+	mt2 := machineConn.Trigger()
+	ct := clusterConn.Trigger()
+	ct2 := clusterConn.Trigger()
 
 	triggerNoRecv(t, mt)
 	triggerNoRecv(t, mt2)
@@ -432,7 +434,7 @@ func TestTrigger(t *testing.T) {
 	ct.Stop()
 	ct2.Stop()
 
-	fast := conn.TriggerTick(1, MachineTable)
+	fast := machineConn.TriggerTick(1)
 	triggerRecv(t, fast)
 	triggerRecv(t, fast)
 	triggerRecv(t, fast)
@@ -441,7 +443,7 @@ func TestTrigger(t *testing.T) {
 func TestTriggerTickStop(t *testing.T) {
 	conn := New()
 
-	mt := conn.TriggerTick(100, MachineTable)
+	mt := conn.Restrict(MachineTable).TriggerTick(100)
 
 	// The initial tick.
 	triggerRecv(t, mt)

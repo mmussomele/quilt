@@ -32,9 +32,10 @@ var (
 
 func runMinionSync(conn db.Conn, store Store) {
 	loopLog := util.NewEventTimer("Etcd")
+	conn = conn.Restrict(db.MinionTable)
 	minion := getMinion(conn)
 	go syncSubnet(conn, store, minion)
-	for range conn.TriggerTick(minionTimeout/2, db.MinionTable).C {
+	for range conn.TriggerTick(minionTimeout / 2).C {
 		loopLog.LogStart()
 		writeMinion(conn, store)
 		readMinion(conn, store)

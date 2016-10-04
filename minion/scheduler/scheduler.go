@@ -18,6 +18,9 @@ import (
 
 // Run blocks implementing the scheduler module.
 func Run(conn db.Conn, dk docker.Client) {
+	conn = conn.Restrict(db.MinionTable, db.ContainerTable, db.PlacementTable,
+		db.EtcdTable)
+
 	bootWait(conn)
 
 	subnet := getMinionSubnet(conn)
@@ -27,9 +30,7 @@ func Run(conn db.Conn, dk docker.Client) {
 	}
 
 	loopLog := util.NewEventTimer("Scheduler")
-	trig := conn.TriggerTick(60, db.MinionTable, db.ContainerTable,
-		db.PlacementTable, db.EtcdTable).C
-	for range trig {
+	for range conn.TriggerTick(60).C {
 		loopLog.LogStart()
 		minion, err := conn.MinionSelf()
 		if err != nil {

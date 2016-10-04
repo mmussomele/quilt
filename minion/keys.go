@@ -14,7 +14,7 @@ const authorizedKeysFile = "/home/quilt/.ssh/authorized_keys"
 
 func syncAuthorizedKeys(conn db.Conn) {
 	waitForMinion(conn)
-	for range conn.TriggerTick(30, db.MinionTable).C {
+	for range conn.Restrict(db.MinionTable).TriggerTick(30).C {
 		if err := runOnce(conn); err != nil {
 			log.WithError(err).Error("Failed to sync keys")
 		}

@@ -15,7 +15,7 @@ const testImage = "alpine"
 
 func TestContainerTxn(t *testing.T) {
 	conn := db.New()
-	trigg := conn.Trigger(db.ContainerTable).C
+	trigg := conn.Restrict(db.ContainerTable).Trigger().C
 
 	spec := ""
 	testContainerTxn(t, conn, spec)
@@ -116,7 +116,7 @@ func testContainerTxn(t *testing.T, conn db.Conn, spec string) {
 
 func TestConnectionTxn(t *testing.T) {
 	conn := db.New()
-	trigg := conn.Trigger(db.ConnectionTable).C
+	trigg := conn.Restrict(db.ConnectionTable).Trigger().C
 
 	pre := `var a = new Service("a", [new Container("alpine")]);
 	var b = new Service("b", [new Container("alpine")]);

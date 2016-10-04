@@ -34,9 +34,7 @@ type dbslice []dbport
 // Run blocks implementing the network services.
 func Run(conn db.Conn, dk docker.Client) {
 	loopLog := util.NewEventTimer("Network")
-	for range conn.TriggerTick(30, db.MinionTable, db.ContainerTable,
-		db.ConnectionTable, db.LabelTable, db.EtcdTable).C {
-
+	for range conn.TriggerTick(30).C {
 		loopLog.LogStart()
 		runWorker(conn, dk)
 		runMaster(conn)

@@ -80,7 +80,7 @@ func (sv *supervisor) runSystem() {
 	}
 
 	loopLog := util.NewEventTimer("Supervisor")
-	for range sv.conn.Trigger(db.MinionTable, db.EtcdTable).C {
+	for range sv.conn.Trigger().C {
 		loopLog.LogStart()
 		sv.runSystemOnce()
 		loopLog.LogEnd()
@@ -88,13 +88,14 @@ func (sv *supervisor) runSystem() {
 }
 
 func (sv *supervisor) runSystemOnce() {
-	minion, err := sv.conn.MinionSelf()
+	minion, err := sv.conn.Restrict(db.MinionTable).MinionSelf()
 	if err != nil {
 		return
 	}
 
 	var etcdRow db.Etcd
-	if etcdRows := sv.conn.SelectFromEtcd(nil); len(etcdRows) == 1 {
+	etcdRows := sv.conn.Restrict(db.EtcdTable).SelectFromEtcd(nil)
+	if len(etcdRows) == 1 {
 		etcdRow = etcdRows[0]
 	}
 

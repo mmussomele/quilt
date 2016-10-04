@@ -87,14 +87,13 @@ func (cn Conn) Transact(do func(db Database) error) error {
 	return err
 }
 
-// Trigger registers a new database trigger that watches changes to 'tableName'.  Any
-// change to the table, including row insertions, deletions, and modifications, will
+// Trigger registers a new database trigger that watches changes to db tables.  Any
+// change to the tables, including row insertions, deletions, and modifications, will
 // cause a notification on 'Trigger.C'.
-func (cn Conn) Trigger(tt ...TableType) Trigger {
+func (cn Conn) Trigger() Trigger {
 	trigger := Trigger{C: make(chan struct{}, 1), stop: make(chan struct{})}
 	cn.Transact(func(db Database) error {
-		for _, t := range tt {
-			dbTable := db.accessTable(t)
+		for _, dbTable := range db.tables {
 			dbTable.triggers[trigger] = struct{}{}
 		}
 		return nil
@@ -106,9 +105,8 @@ func (cn Conn) Trigger(tt ...TableType) Trigger {
 // TriggerTick creates a trigger, similar to Trigger(), that additionally ticks once
 // every N 'seconds'.  So that clients properly initialize, TriggerTick() sends an
 // initialization tick at startup.
-func (cn Conn) TriggerTick(seconds int, tt ...TableType) Trigger {
-	trigger := cn.Trigger(tt...)
-
+func (cn Conn) TriggerTick(seconds int) Trigger {
+	trigger := cn.Trigger()
 	go func() {
 		ticker := time.NewTicker(time.Duration(seconds) * time.Second)
 		defer ticker.Stop()

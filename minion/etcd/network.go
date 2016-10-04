@@ -51,9 +51,7 @@ type storeContainerSlice []storeContainer
 // channel. Multiple redundant pings will be coalesced into a single message.
 func wakeChan(conn db.Conn, store Store) chan struct{} {
 	minionWatch := store.Watch(minionDir, 1*time.Second)
-	trigg := conn.TriggerTick(30, db.MinionTable, db.ContainerTable, db.LabelTable,
-		db.EtcdTable).C
-
+	trigg := conn.TriggerTick(30).C
 	c := make(chan struct{}, 1)
 	go func() {
 		for {
@@ -73,6 +71,8 @@ func wakeChan(conn db.Conn, store Store) chan struct{} {
 }
 
 func runNetwork(conn db.Conn, store Store) {
+	conn = conn.Restrict(db.MinionTable, db.ContainerTable, db.LabelTable,
+		db.EtcdTable)
 	for range wakeChan(conn, store) {
 		// If the etcd read failed, we only want to update the db if it
 		// failed because a key was missing (has not been created yet).

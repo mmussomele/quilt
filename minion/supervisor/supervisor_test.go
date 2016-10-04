@@ -371,7 +371,7 @@ func initTest() *testCtx {
 	conn := db.New()
 	md, dk := docker.NewMock()
 	ctx := testCtx{supervisor{}, fakeDocker{dk, md}, nil, conn,
-		conn.Trigger(db.MinionTable, db.EtcdTable)}
+		conn.Restrict(db.MinionTable, db.EtcdTable).Trigger()}
 	ctx.sv.conn = ctx.conn
 	ctx.sv.dk = ctx.fd.Client
 

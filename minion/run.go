@@ -42,7 +42,7 @@ func Run() {
 	go apiServer.Run(conn, fmt.Sprintf("tcp://0.0.0.0:%d", api.DefaultRemotePort))
 
 	loopLog := util.NewEventTimer("Minion-Update")
-	for range conn.Trigger(db.MinionTable).C {
+	for range conn.Restrict(db.MinionTable).Trigger().C {
 		loopLog.LogStart()
 		conn.Transact(func(view db.Database) error {
 			minion, err := view.MinionSelf()
