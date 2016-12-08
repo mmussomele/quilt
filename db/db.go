@@ -9,6 +9,10 @@ import (
 	"time"
 )
 
+var (
+	global = New()
+)
+
 // The Database is the central storage location for all state in the system.  The policy
 // engine populates the database with a preferred state of the world, while various
 // modules flesh out that policy with actual implementation details.
@@ -52,9 +56,27 @@ func New() Conn {
 	return cn
 }
 
-// Restrict creates a new connection connected to the same database, but with restricted
+// Reset replaces the glocal database with a new, empty one. Any connections to the old
+// database are maintained, but any subsequent calls to db.Open(...) will be connected
+// to the new one. This function should only be used for testing.
+func Reset() {
+	global = New()
+}
+
+// Open creates a new connection to the global, default database with access to the given
+// tables. If no tables are given, the connection has access to all tables for
+// convenience.
+func Open(tables ...TableType) Conn {
+	if len(tables) == 0 {
+		tables = allTables
+	}
+
+	return global.restrict(tables...)
+}
+
+// restrict creates a new connection connected to the same database, but with restricted
 // access to only the given tables.
-func (cn Conn) Restrict(tables ...TableType) Conn {
+func (cn Conn) restrict(tables ...TableType) Conn {
 	// This Conn has the same database data, just a subset of the tables.
 	db := Database{make(map[TableType]*table), cn.db.idAlloc}
 	for _, t := range tables {
@@ -85,6 +107,19 @@ func (cn Conn) Transact(do func(db Database) error) error {
 		table.alert()
 	}
 	return err
+}
+
+// TriggerOn is a convenience function to trigger on some set of tables in the default
+// database. It is equivalent to db.Open(tables...).Trigger().
+func TriggerOn(tables ...TableType) Trigger {
+	return Open(tables...).Trigger()
+}
+
+// TriggerTickOn is a convenience function to trigger on some set of tables in the default
+// database, and ticks ever N 'seconds'. It is equivalent to
+// db.Open(tables...).TriggerTick(seconds).
+func TriggerTickOn(seconds int, tables ...TableType) Trigger {
+	return Open(tables...).TriggerTick(seconds)
 }
 
 // Trigger registers a new database trigger that watches changes to db tables.  Any

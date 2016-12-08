@@ -16,7 +16,7 @@ type clients struct {
 
 func TestBoot(t *testing.T) {
 	conn, clients := startTest()
-	RunOnce(conn)
+	RunOnce()
 
 	assert.Zero(t, clients.newCalls)
 
@@ -29,12 +29,12 @@ func TestBoot(t *testing.T) {
 		return nil
 	})
 
-	RunOnce(conn)
+	RunOnce()
 	assert.Equal(t, 1, clients.newCalls)
 	_, ok := clients.clients["1.1.1.1"]
 	assert.True(t, ok)
 
-	RunOnce(conn)
+	RunOnce()
 	assert.Equal(t, 1, clients.newCalls)
 	_, ok = clients.clients["1.1.1.1"]
 	assert.True(t, ok)
@@ -48,7 +48,7 @@ func TestBoot(t *testing.T) {
 		return nil
 	})
 
-	RunOnce(conn)
+	RunOnce()
 	assert.Equal(t, 2, clients.newCalls)
 
 	_, ok = clients.clients["2.2.2.2"]
@@ -57,10 +57,10 @@ func TestBoot(t *testing.T) {
 	_, ok = clients.clients["1.1.1.1"]
 	assert.True(t, ok)
 
-	RunOnce(conn)
-	RunOnce(conn)
-	RunOnce(conn)
-	RunOnce(conn)
+	RunOnce()
+	RunOnce()
+	RunOnce()
+	RunOnce()
 	assert.Equal(t, 2, clients.newCalls)
 
 	_, ok = clients.clients["2.2.2.2"]
@@ -77,7 +77,7 @@ func TestBoot(t *testing.T) {
 		return nil
 	})
 
-	RunOnce(conn)
+	RunOnce()
 	assert.Equal(t, 2, clients.newCalls)
 
 	_, ok = clients.clients["2.2.2.2"]
@@ -86,10 +86,10 @@ func TestBoot(t *testing.T) {
 	_, ok = clients.clients["1.1.1.1"]
 	assert.False(t, ok)
 
-	RunOnce(conn)
-	RunOnce(conn)
-	RunOnce(conn)
-	RunOnce(conn)
+	RunOnce()
+	RunOnce()
+	RunOnce()
+	RunOnce()
 	assert.Equal(t, 2, clients.newCalls)
 
 	_, ok = clients.clients["2.2.2.2"]
@@ -117,7 +117,7 @@ func TestBootEtcd(t *testing.T) {
 		view.Commit(m)
 		return nil
 	})
-	RunOnce(conn)
+	RunOnce()
 	assert.Equal(t, []string{"m1-priv"}, clients.clients["w1-pub"].mc.EtcdMembers)
 
 	conn.Transact(func(view db.Database) error {
@@ -129,7 +129,7 @@ func TestBootEtcd(t *testing.T) {
 		view.Commit(m)
 		return nil
 	})
-	RunOnce(conn)
+	RunOnce()
 	etcdMembers := clients.clients["w1-pub"].mc.EtcdMembers
 	assert.Len(t, etcdMembers, 2)
 	assert.Contains(t, etcdMembers, "m1-priv")
@@ -142,7 +142,7 @@ func TestBootEtcd(t *testing.T) {
 		view.Remove(toDelete)
 		return nil
 	})
-	RunOnce(conn)
+	RunOnce()
 	assert.Equal(t, []string{"m2-priv"},
 		clients.clients["w1-pub"].mc.EtcdMembers)
 }
@@ -158,13 +158,13 @@ func TestInitForeman(t *testing.T) {
 		return nil
 	})
 
-	Init(conn)
+	Init()
 	for _, m := range minions {
 		assert.Equal(t, db.Role(db.Worker), m.machine.Role)
 	}
 
 	conn = startTestWithRole(pb.MinionConfig_Role(-7))
-	Init(conn)
+	Init()
 	for _, m := range minions {
 		assert.Equal(t, db.None, m.machine.Role)
 	}
@@ -190,7 +190,7 @@ func TestConfigConsistency(t *testing.T) {
 		return nil
 	})
 
-	Init(conn)
+	Init()
 	conn.Transact(func(view db.Database) error {
 		master.Role = db.Master
 		worker.Role = db.Worker
@@ -199,7 +199,7 @@ func TestConfigConsistency(t *testing.T) {
 		return nil
 	})
 
-	RunOnce(conn)
+	RunOnce()
 	checkRoles := func() {
 		r := minions["1.1.1.1"].client.(*fakeClient).mc.Role
 		assert.Equal(t, masterRole, r)
@@ -218,13 +218,13 @@ func TestConfigConsistency(t *testing.T) {
 	clients.clients["2.2.2.2"] = &fakeClient{clients, "2.2.2.2",
 		pb.MinionConfig{Role: workerRole}}
 
-	Init(conn)
-	RunOnce(conn)
+	Init()
+	RunOnce()
 	checkRoles()
 
 	// After many runs, the roles should never change
 	for i := 0; i < 25; i++ {
-		RunOnce(conn)
+		RunOnce()
 	}
 	checkRoles()
 
@@ -244,7 +244,7 @@ func TestConfigConsistency(t *testing.T) {
 }
 
 func startTest() (db.Conn, *clients) {
-	conn := db.New()
+	db.Reset()
 	minions = map[string]*minion{}
 	clients := &clients{make(map[string]*fakeClient), 0}
 	newClient = func(ip string) (client, error) {
@@ -256,10 +256,11 @@ func startTest() (db.Conn, *clients) {
 		clients.newCalls++
 		return fc, nil
 	}
-	return conn, clients
+	return db.Open(), clients
 }
 
 func startTestWithRole(role pb.MinionConfig_Role) db.Conn {
+	db.Reset()
 	clientInst := &clients{make(map[string]*fakeClient), 0}
 	newClient = func(ip string) (client, error) {
 		fc := &fakeClient{clientInst, ip, pb.MinionConfig{Role: role}}
@@ -267,7 +268,7 @@ func startTestWithRole(role pb.MinionConfig_Role) db.Conn {
 		clientInst.newCalls++
 		return fc, nil
 	}
-	return db.New()
+	return db.Open()
 }
 
 type fakeClient struct {

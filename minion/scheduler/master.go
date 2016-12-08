@@ -19,7 +19,9 @@ type context struct {
 	changed     []*db.Container
 }
 
-func runMaster(conn db.Conn) {
+func runMaster() {
+	conn := db.Open(db.EtcdTable, db.PlacementTable, db.ContainerTable,
+		db.MinionTable)
 	conn.Transact(func(view db.Database) error {
 		if view.EtcdLeader() {
 			placeContainers(view)

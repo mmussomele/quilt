@@ -17,20 +17,20 @@ import (
 )
 
 func TestWriteMinion(t *testing.T) {
-	t.Parallel()
+	db.Reset()
 
 	ip := "1.2.3.4"
 	key := "/minion/nodes/" + ip + "/" + selfNode
 
-	conn := db.New()
 	store := NewMock()
 
-	writeMinion(conn, store)
+	writeMinion(store)
 	val, err := store.Get(key)
 	assert.NotNil(t, err)
 	assert.Empty(t, val)
 
 	// Minion without a PrivateIP
+	conn := db.Open(db.MinionTable)
 	conn.Transact(func(view db.Database) error {
 		m := view.InsertMinion()
 		m.Self = true
@@ -42,7 +42,7 @@ func TestWriteMinion(t *testing.T) {
 		return nil
 	})
 
-	writeMinion(conn, store)
+	writeMinion(store)
 	val, err = store.Get(key)
 	assert.NotNil(t, err)
 	assert.Empty(t, val)
@@ -53,7 +53,7 @@ func TestWriteMinion(t *testing.T) {
 		view.Commit(m)
 		return nil
 	})
-	writeMinion(conn, store)
+	writeMinion(store)
 	val, err = store.Get(key)
 	assert.Nil(t, err)
 
@@ -63,16 +63,16 @@ func TestWriteMinion(t *testing.T) {
 }
 
 func TestReadMinion(t *testing.T) {
-	t.Parallel()
+	db.Reset()
 
-	conn := db.New()
+	conn := db.Open(db.MinionTable)
 	store := NewMock()
 
 	m := randMinion()
 	js, _ := json.Marshal(m)
 	store.Set(nodeStore+"/foo/"+selfNode, string(js), 0)
 
-	readMinion(conn, store)
+	readMinion(store)
 	minions := conn.SelectFromMinion(nil)
 	assert.Equal(t, 1, len(minions))
 
@@ -81,7 +81,7 @@ func TestReadMinion(t *testing.T) {
 
 	store = NewMock()
 	store.Mkdir(nodeStore, 0)
-	readMinion(conn, store)
+	readMinion(store)
 	minions = conn.SelectFromMinion(nil)
 	assert.Empty(t, minions)
 }
@@ -148,7 +148,8 @@ func TestGenerateSubnet(t *testing.T) {
 
 func TestUpdateSubnet(t *testing.T) {
 	store := newTestMock()
-	conn := db.New()
+	db.Reset()
+	conn := db.Open()
 
 	subnetTTL = time.Second
 	defer func() {
@@ -185,7 +186,7 @@ func TestUpdateSubnet(t *testing.T) {
 	timeUpdateSubnet := func() chan struct{} {
 		out := make(chan struct{})
 		go func() {
-			m = updateSubnet(conn, store, m)
+			m = updateSubnet(store, m)
 			out <- struct{}{}
 			close(out)
 		}()

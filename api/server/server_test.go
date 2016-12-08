@@ -20,10 +20,8 @@ func checkQuery(t *testing.T, s server, table db.TableType, exp string) {
 }
 
 func TestMachineResponse(t *testing.T) {
-	t.Parallel()
-
-	conn := db.New()
-	conn.Transact(func(view db.Database) error {
+	db.Reset()
+	db.Open(db.MachineTable).Transact(func(view db.Database) error {
 		m := view.InsertMachine()
 		m.Role = db.Master
 		m.Provider = db.Amazon
@@ -39,14 +37,12 @@ func TestMachineResponse(t *testing.T) {
 		`"Size":"size","DiskSize":0,"SSHKeys":null,"CloudID":"",` +
 		`"PublicIP":"8.8.8.8","PrivateIP":"9.9.9.9","Connected":false}]`
 
-	checkQuery(t, server{conn}, db.MachineTable, exp)
+	checkQuery(t, server{}, db.MachineTable, exp)
 }
 
 func TestContainerResponse(t *testing.T) {
-	t.Parallel()
-
-	conn := db.New()
-	conn.Transact(func(view db.Database) error {
+	db.Reset()
+	db.Open(db.ContainerTable).Transact(func(view db.Database) error {
 		c := view.InsertContainer()
 		c.DockerID = "docker-id"
 		c.Image = "image"
@@ -61,12 +57,12 @@ func TestContainerResponse(t *testing.T) {
 		`"EndpointID":"","StitchID":0,"DockerID":"docker-id","Image":"image",` +
 		`"Command":["cmd","arg"],"Labels":["labelA","labelB"],"Env":null}]`
 
-	checkQuery(t, server{conn}, db.ContainerTable, exp)
+	checkQuery(t, server{}, db.ContainerTable, exp)
 }
 
 func TestBadDeployment(t *testing.T) {
-	conn := db.New()
-	s := server{dbConn: conn}
+	db.Reset()
+	s := server{}
 
 	badDeployment := `{`
 
@@ -77,8 +73,8 @@ func TestBadDeployment(t *testing.T) {
 }
 
 func TestDeploy(t *testing.T) {
-	conn := db.New()
-	s := server{dbConn: conn}
+	db.Reset()
+	s := server{}
 
 	createMachineDeployment := `
 	{"Machines":[
@@ -96,7 +92,7 @@ func TestDeploy(t *testing.T) {
 	assert.NoError(t, err)
 
 	var spec string
-	conn.Transact(func(view db.Database) error {
+	db.Open(db.ClusterTable).Transact(func(view db.Database) error {
 		clst, err := view.GetCluster()
 		assert.NoError(t, err)
 		spec = clst.Spec
@@ -108,13 +104,12 @@ func TestDeploy(t *testing.T) {
 
 	actual, err := stitch.FromJSON(spec)
 	assert.NoError(t, err)
-
 	assert.Equal(t, exp, actual)
 }
 
 func TestVagrantDeployment(t *testing.T) {
-	conn := db.New()
-	s := server{dbConn: conn}
+	db.Reset()
+	s := server{}
 
 	vagrantDeployment := `
 	{"Machines":[
@@ -135,7 +130,7 @@ func TestVagrantDeployment(t *testing.T) {
 	assert.Error(t, err, vagrantErrMsg)
 
 	var spec string
-	conn.Transact(func(view db.Database) error {
+	db.Open(db.ClusterTable).Transact(func(view db.Database) error {
 		clst, err := view.GetCluster()
 		assert.NoError(t, err)
 		spec = clst.Spec

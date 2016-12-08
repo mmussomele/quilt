@@ -15,10 +15,10 @@ var (
 )
 
 func TestRunWorker(t *testing.T) {
-	t.Parallel()
+	db.Reset()
 
 	md, dk := docker.NewMock()
-	conn := db.New()
+	conn := db.Open()
 	conn.Transact(func(view db.Database) error {
 		container := view.InsertContainer()
 		container.Image = "Image"
@@ -33,20 +33,20 @@ func TestRunWorker(t *testing.T) {
 	})
 
 	// Wrong Minion IP, should do nothing.
-	runWorker(conn, dk, "1.2.3.5", *subnet)
+	runWorker(dk, "1.2.3.5", *subnet)
 	dkcs, err := dk.List(nil)
 	assert.NoError(t, err)
 	assert.Len(t, dkcs, 0)
 
 	// Run with a list error, should do nothing.
 	md.ListError = true
-	runWorker(conn, dk, "1.2.3.4", *subnet)
+	runWorker(dk, "1.2.3.4", *subnet)
 	md.ListError = false
 	dkcs, err = dk.List(nil)
 	assert.NoError(t, err)
 	assert.Len(t, dkcs, 0)
 
-	runWorker(conn, dk, "1.2.3.4", *subnet)
+	runWorker(dk, "1.2.3.4", *subnet)
 	dkcs, err = dk.List(nil)
 	assert.NoError(t, err)
 	assert.Len(t, dkcs, 1)

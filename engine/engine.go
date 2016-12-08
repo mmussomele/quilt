@@ -14,10 +14,9 @@ var myIP = util.MyIP
 var defaultDiskSize = 32
 
 // Run updates the database in response to stitch changes in the cluster table.
-func Run(conn db.Conn) {
-	for range conn.Restrict(db.ClusterTable, db.MachineTable,
-		db.ACLTable).TriggerTick(30).C {
-
+func Run() {
+	conn := db.Open(db.ClusterTable, db.MachineTable, db.ACLTable)
+	for range conn.TriggerTick(30).C {
 		conn.Transact(updateTxn)
 	}
 }

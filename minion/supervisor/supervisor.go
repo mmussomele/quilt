@@ -63,8 +63,8 @@ type supervisor struct {
 }
 
 // Run blocks implementing the supervisor module.
-func Run(conn db.Conn, dk docker.Client) {
-	sv := supervisor{conn: conn, dk: dk}
+func Run(dk docker.Client) {
+	sv := supervisor{conn: db.Open(db.MinionTable, db.EtcdTable), dk: dk}
 	sv.runSystem()
 }
 
@@ -88,13 +88,13 @@ func (sv *supervisor) runSystem() {
 }
 
 func (sv *supervisor) runSystemOnce() {
-	minion, err := sv.conn.Restrict(db.MinionTable).MinionSelf()
+	minion, err := sv.conn.MinionSelf()
 	if err != nil {
 		return
 	}
 
 	var etcdRow db.Etcd
-	etcdRows := sv.conn.Restrict(db.EtcdTable).SelectFromEtcd(nil)
+	etcdRows := sv.conn.SelectFromEtcd(nil)
 	if len(etcdRows) == 1 {
 		etcdRow = etcdRows[0]
 	}

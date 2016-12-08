@@ -92,7 +92,10 @@ type OFRuleSlice []OFRule
 //        * Forward arp packets to both br-int and the default gateway.
 //        * Forward packets from LOCAL to the container with the packet's dst MAC.
 
-func runWorker(conn db.Conn, dk docker.Client) {
+func runWorker(dk docker.Client) {
+	conn := db.Open(db.ContainerTable, db.LabelTable, db.ConnectionTable,
+		db.MinionTable)
+
 	minion, err := conn.MinionSelf()
 	if err != nil || !minion.SupervisorInit || minion.Role != db.Worker {
 		return

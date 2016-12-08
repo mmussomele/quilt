@@ -103,9 +103,10 @@ func (p *fakeProvider) ChooseSize(ram stitch.Range, cpu stitch.Range,
 }
 
 func newTestCluster(namespace string) *cluster {
+	db.Reset()
 	sleep = func(t time.Duration) {}
 	mock()
-	return newCluster(db.New(), namespace)
+	return newCluster(namespace)
 }
 
 func TestPanicBadProvider(t *testing.T) {
@@ -116,8 +117,7 @@ func TestPanicBadProvider(t *testing.T) {
 		allProviders = temp
 	}()
 	allProviders = []db.Provider{FakeAmazon}
-	conn := db.New()
-	newCluster(conn, "test")
+	newCluster("test")
 }
 
 func TestSyncDB(t *testing.T) {
@@ -183,8 +183,10 @@ func TestSync(t *testing.T) {
 
 	// Test initial boot
 	clst := newTestCluster("ns")
-	setNamespace(clst.conn, "ns")
-	clst.conn.Transact(func(view db.Database) error {
+	setNamespace("ns")
+
+	conn := db.Open()
+	conn.Transact(func(view db.Database) error {
 		m := view.InsertMachine()
 		m.Role = db.Master
 		m.Provider = FakeAmazon
@@ -196,7 +198,7 @@ func TestSync(t *testing.T) {
 	checkSync(clst, FakeAmazon, []bootRequest{amazonLargeBoot}, noStops)
 
 	// Test adding a machine with the same provider
-	clst.conn.Transact(func(view db.Database) error {
+	conn.Transact(func(view db.Database) error {
 		m := view.InsertMachine()
 		m.Role = db.Master
 		m.Provider = FakeAmazon
@@ -208,7 +210,7 @@ func TestSync(t *testing.T) {
 	checkSync(clst, FakeAmazon, []bootRequest{amazonXLargeBoot}, noStops)
 
 	// Test adding a machine with a different provider
-	clst.conn.Transact(func(view db.Database) error {
+	conn.Transact(func(view db.Database) error {
 		m := view.InsertMachine()
 		m.Role = db.Master
 		m.Provider = FakeVagrant
@@ -221,7 +223,7 @@ func TestSync(t *testing.T) {
 
 	// Test removing a machine
 	var toRemove db.Machine
-	clst.conn.Transact(func(view db.Database) error {
+	conn.Transact(func(view db.Database) error {
 		toRemove = view.SelectFromMachine(func(m db.Machine) bool {
 			return m.Provider == FakeAmazon && m.Size == "m4.xlarge"
 		})[0]
@@ -231,7 +233,7 @@ func TestSync(t *testing.T) {
 	checkSync(clst, FakeAmazon, noBoots, []string{toRemove.CloudID})
 
 	// Test removing and adding a machine
-	clst.conn.Transact(func(view db.Database) error {
+	conn.Transact(func(view db.Database) error {
 		toRemove = view.SelectFromMachine(func(m db.Machine) bool {
 			return m.Provider == FakeAmazon && m.Size == "m4.large"
 		})[0]
@@ -298,13 +300,13 @@ func TestACLs(t *testing.T) {
 }
 
 func TestUpdateCluster(t *testing.T) {
-	conn := db.New()
+	db.Reset()
 
-	clst := updateCluster(conn, nil)
+	clst := updateCluster(nil)
 	assert.Nil(t, clst)
 
-	setNamespace(conn, "ns1")
-	clst = updateCluster(conn, clst)
+	setNamespace("ns1")
+	clst = updateCluster(clst)
 	assert.NotNil(t, clst)
 	assert.Equal(t, "ns1", clst.namespace)
 
@@ -313,6 +315,7 @@ func TestUpdateCluster(t *testing.T) {
 	assert.Empty(t, amzn.stopRequests)
 	assert.Equal(t, "ns1", amzn.namespace)
 
+	conn := db.Open()
 	conn.Transact(func(view db.Database) error {
 		m := view.InsertMachine()
 		m.Provider = FakeAmazon
@@ -324,7 +327,7 @@ func TestUpdateCluster(t *testing.T) {
 	oldClst := clst
 	oldAmzn := amzn
 
-	clst = updateCluster(conn, clst)
+	clst = updateCluster(clst)
 	assert.NotNil(t, clst)
 
 	// Pointers shouldn't have changed
@@ -346,8 +349,8 @@ func TestUpdateCluster(t *testing.T) {
 
 	oldClst = clst
 	oldAmzn = amzn
-	setNamespace(conn, "ns2")
-	clst = updateCluster(conn, clst)
+	setNamespace("ns2")
+	clst = updateCluster(clst)
 	assert.NotNil(t, clst)
 
 	// Pointers should have changed
@@ -364,8 +367,8 @@ func TestUpdateCluster(t *testing.T) {
 	assert.Empty(t, amzn.stopRequests)
 }
 
-func setNamespace(conn db.Conn, ns string) {
-	conn.Transact(func(view db.Database) error {
+func setNamespace(ns string) {
+	db.Open().Transact(func(view db.Database) error {
 		clst, err := view.GetCluster()
 		if err != nil {
 			clst = view.InsertCluster()

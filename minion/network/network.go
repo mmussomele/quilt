@@ -32,12 +32,15 @@ type dbport struct {
 type dbslice []dbport
 
 // Run blocks implementing the network services.
-func Run(conn db.Conn, dk docker.Client) {
+func Run(dk docker.Client) {
 	loopLog := util.NewEventTimer("Network")
-	for range conn.TriggerTick(30).C {
+	trigger := db.TriggerTickOn(30, db.MinionTable, db.ContainerTable,
+		db.ConnectionTable, db.LabelTable, db.EtcdTable)
+	for range trigger.C {
+
 		loopLog.LogStart()
-		runWorker(conn, dk)
-		runMaster(conn)
+		runWorker(dk)
+		runMaster()
 		loopLog.LogEnd()
 	}
 }
@@ -46,11 +49,14 @@ func Run(conn db.Conn, dk docker.Client) {
 // container networking.  This simply means creating a logical port for each container
 // and label.  The specialized OpenFlow rules Quilt requires are managed by the workers
 // individuallly.
-func runMaster(conn db.Conn) {
+func runMaster() {
 	var leader, init bool
 	var labels []db.Label
 	var containers []db.Container
 	var connections []db.Connection
+
+	conn := db.Open(db.EtcdTable, db.LabelTable, db.ContainerTable,
+		db.ConnectionTable, db.MinionTable)
 	conn.Transact(func(view db.Database) error {
 		init = checkSupervisorInit(view)
 		leader = view.EtcdLeader()

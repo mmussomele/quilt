@@ -16,7 +16,8 @@ func TestEngine(t *testing.T) {
 		adminACL: ["1.2.3.4/32"],
 	});
 	var baseMachine = new Machine({provider: "Amazon", size: "m4.large"});`
-	conn := db.New()
+	db.Reset()
+	conn := db.Open()
 
 	code := pre + `deployment.deploy(baseMachine.asMaster().replicate(2));
 		deployment.deploy(baseMachine.asWorker().replicate(3));`
@@ -142,7 +143,8 @@ func TestEngine(t *testing.T) {
 
 func TestSort(t *testing.T) {
 	pre := `var baseMachine = new Machine({provider: "Amazon", size: "m4.large"});`
-	conn := db.New()
+	db.Reset()
+	conn := db.Open()
 
 	updateStitch(t, conn, prog(t, pre+`
 	deployment.deploy(baseMachine.asMaster().replicate(3));
@@ -198,7 +200,8 @@ func TestSort(t *testing.T) {
 }
 
 func TestACLs(t *testing.T) {
-	conn := db.New()
+	db.Reset()
+	conn := db.Open()
 
 	code := `createDeployment({adminACL: ["1.2.3.4/32", "local"]})
 		.deploy([

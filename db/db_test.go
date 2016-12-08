@@ -136,7 +136,7 @@ func TestRestrictConnBasic(t *testing.T) {
 		return nil
 	})
 
-	conn.Restrict(MachineTable).Transact(func(view Database) error {
+	conn.restrict(MachineTable).Transact(func(view Database) error {
 		machines := view.SelectFromMachine(func(m Machine) bool {
 			return true
 		})
@@ -162,16 +162,7 @@ func TestConnNoPanic(t *testing.T) {
 
 	conn := New()
 	conn.Transact(func(view Database) error {
-		view.InsertEtcd()
-		view.InsertLabel()
-		view.InsertMinion()
-		view.InsertMachine()
-		view.InsertCluster()
-		view.InsertPlacement()
-		view.InsertContainer()
-		view.InsertConnection()
-		view.InsertACL()
-
+		insertOnAllTables(view)
 		return nil
 	})
 }
@@ -184,7 +175,7 @@ func TestRestrictConnNoPanic(t *testing.T) {
 		}
 	}()
 
-	conn := New().Restrict(MachineTable, ClusterTable)
+	conn := New().restrict(MachineTable, ClusterTable)
 	conn.Transact(func(view Database) error {
 		view.InsertMachine()
 		view.InsertCluster()
@@ -201,7 +192,7 @@ func TestRestrictConnPanic(t *testing.T) {
 		}
 	}()
 
-	conn := New().Restrict(MachineTable, ClusterTable)
+	conn := New().restrict(MachineTable, ClusterTable)
 	conn.Transact(func(view Database) error {
 		view.InsertEtcd()
 
@@ -219,8 +210,8 @@ func TestRestrictRecurseNoPanic(t *testing.T) {
 		}
 	}()
 
-	c1 := New().Restrict(MachineTable, ClusterTable)
-	c1.Restrict(MachineTable) // should be fine, c1 can access MachineTable
+	c1 := New().restrict(MachineTable, ClusterTable)
+	c1.restrict(MachineTable) // should be fine, c1 can access MachineTable
 }
 
 func TestRestrictRecursePanic(t *testing.T) {
@@ -230,8 +221,8 @@ func TestRestrictRecursePanic(t *testing.T) {
 		}
 	}()
 
-	c1 := New().Restrict(MachineTable, ClusterTable)
-	c1.Restrict(EtcdTable) // can't restrict to a table you can't access
+	c1 := New().restrict(MachineTable, ClusterTable)
+	c1.restrict(EtcdTable) // can't restrict to a table you can't access
 }
 
 // Connections with restricted table sets should be able to run concurrently if their
@@ -240,19 +231,19 @@ func TestRestrictConcurrent(t *testing.T) {
 	// Run the deadlock test multiple times to increase the odds of detecting a race
 	// condition
 	for i := 0; i < 10; i++ {
-		checkIndependentTransacts(t)
+		subConnOne, subConnTwo := getRandomRestrictedConns(New())
+		checkIndependentTransacts(t, subConnOne, subConnTwo)
 	}
 }
 
 // returns false when the transactions deadlock
-func checkIndependentTransacts(t *testing.T) {
+func checkIndependentTransacts(t *testing.T, subConnOne, subConnTwo Conn) {
 	transactOneStart := make(chan struct{})
 	transactTwoDone := make(chan struct{})
 	done := make(chan struct{})
 	doneRoutines := make(chan struct{})
 	defer close(doneRoutines)
 
-	subConnOne, subConnTwo := getRandomRestrictedConns(New())
 	one := func() {
 		subConnOne.Transact(func(view Database) error {
 			close(transactOneStart)
@@ -300,14 +291,13 @@ func TestRestrictSequential(t *testing.T) {
 	// Run the sequential test multiple times to increase the odds of detecting a
 	// race condition
 	for i := 0; i < 10; i++ {
-		checkRestrictSequential(t)
+		subConnOne, subConnTwo := getRandomRestrictedConns(New(),
+			pickTwoTables(map[TableType]struct{}{})...)
+		checkRestrictSequential(t, subConnOne, subConnTwo)
 	}
 }
 
-func checkRestrictSequential(t *testing.T) {
-	subConnOne, subConnTwo := getRandomRestrictedConns(New(),
-		pickTwoTables(map[TableType]struct{}{})...)
-
+func checkRestrictSequential(t *testing.T, subConnOne, subConnTwo Conn) {
 	done := make(chan struct{})
 	defer close(done)
 	results := make(chan int)
@@ -370,7 +360,19 @@ func getRandomRestrictedConns(conn Conn, tables ...TableType) (Conn, Conn) {
 	firstTables = append(firstTables, tables...)
 	secondTables = append(secondTables, tables...)
 
-	return conn.Restrict(firstTables...), conn.Restrict(secondTables...)
+	return conn.restrict(firstTables...), conn.restrict(secondTables...)
+}
+
+// Same as getRandomRestrictedConns, but indirectly using Open()
+func getRandomOpenConns(tables ...TableType) (Conn, Conn) {
+	taken := map[TableType]struct{}{}
+	firstTables := pickTwoTables(taken)
+	secondTables := pickTwoTables(taken)
+
+	firstTables = append(firstTables, tables...)
+	secondTables = append(secondTables, tables...)
+
+	return Open(firstTables...), Open(secondTables...)
 }
 
 func pickTwoTables(taken map[TableType]struct{}) []TableType {
@@ -391,8 +393,8 @@ func pickTwoTables(taken map[TableType]struct{}) []TableType {
 
 func TestTrigger(t *testing.T) {
 	conn := New()
-	machineConn := conn.Restrict(MachineTable)
-	clusterConn := conn.Restrict(ClusterTable)
+	machineConn := conn.restrict(MachineTable)
+	clusterConn := conn.restrict(ClusterTable)
 
 	mt := machineConn.Trigger()
 	mt2 := machineConn.Trigger()
@@ -443,7 +445,7 @@ func TestTrigger(t *testing.T) {
 func TestTriggerTickStop(t *testing.T) {
 	conn := New()
 
-	mt := conn.Restrict(MachineTable).TriggerTick(100)
+	mt := conn.restrict(MachineTable).TriggerTick(100)
 
 	// The initial tick.
 	triggerRecv(t, mt)
@@ -470,6 +472,91 @@ func TestTriggerTickStop(t *testing.T) {
 		return
 	}
 	triggerNoRecv(t, mt)
+}
+
+func TestOpenGlobalState(t *testing.T) {
+	oldGlobal := global
+	global = New()
+	defer func() {
+		global = oldGlobal
+	}()
+
+	conn := Open(MachineTable)
+	conn.Transact(func(view Database) error {
+		m := view.InsertMachine()
+		m.CloudID = "0"
+		view.Commit(m)
+		return nil
+	})
+
+	func() {
+		conn := Open(MachineTable)
+		conn.Transact(func(view Database) error {
+			m := view.SelectFromMachine(nil)
+			assert.Len(t, m, 1)
+			assert.Equal(t, "0", m[0].CloudID)
+			m[0].CloudID = "1"
+			view.Commit(m[0])
+			return nil
+		})
+	}()
+
+	conn = Open(MachineTable)
+	conn.Transact(func(view Database) error {
+		m := view.SelectFromMachine(nil)
+		assert.Len(t, m, 1)
+		assert.Equal(t, "1", m[0].CloudID)
+		return nil
+	})
+}
+
+func TestOpenDefault(t *testing.T) {
+	oldGlobal := global
+	global = New()
+	defer func() {
+		global = oldGlobal
+	}()
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatal("Default connection did not have access to all tables")
+		}
+	}()
+
+	conn := Open()
+	conn.Transact(func(view Database) error {
+		insertOnAllTables(view)
+		return nil
+	})
+}
+
+func TestOpenConcurrent(t *testing.T) {
+	// Run the deadlock test multiple times to increase the odds of detecting a race
+	// condition
+	for i := 0; i < 10; i++ {
+		subConnOne, subConnTwo := getRandomOpenConns()
+		checkIndependentTransacts(t, subConnOne, subConnTwo)
+	}
+
+	// Run the sequential test multiple times to increase the odds of detecting a
+	// race condition
+	for i := 0; i < 10; i++ {
+		overlap := pickTwoTables(map[TableType]struct{}{})
+		subConnOne, subConnTwo := getRandomOpenConns(overlap...)
+		checkRestrictSequential(t, subConnOne, subConnTwo)
+	}
+}
+
+func insertOnAllTables(view Database) {
+	view.InsertEtcd()
+	view.InsertLabel()
+	view.InsertMinion()
+	view.InsertMachine()
+	view.InsertCluster()
+	view.InsertPlacement()
+	view.InsertContainer()
+	view.InsertConnection()
+	view.InsertACL()
 }
 
 func triggerRecv(t *testing.T, trig Trigger) {

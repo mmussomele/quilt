@@ -19,9 +19,9 @@ type server struct {
 	db.Conn
 }
 
-func minionServerRun(conn db.Conn) {
+func minionServerRun() {
 	var sock net.Listener
-	server := server{conn}
+	server := server{db.Open()}
 	for {
 		var err error
 		sock, err = net.Listen("tcp", ":9999")

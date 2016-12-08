@@ -40,11 +40,10 @@ var sleep = time.Sleep
 
 // Run continually checks 'conn' for cluster changes and recreates the cluster as
 // needed.
-func Run(conn db.Conn) {
+func Run() {
 	var clst *cluster
-	clusterConn := conn.Restrict(db.ClusterTable, db.MachineTable, db.ACLTable)
-	for range clusterConn.TriggerTick(30).C {
-		clst = updateCluster(conn, clst)
+	for range db.TriggerTickOn(30, db.ClusterTable, db.MachineTable, db.ACLTable).C {
+		clst = updateCluster(clst)
 
 		// Somewhat of a crude rate-limit of once every five seconds to avoid
 		// stressing out the cloud providers with too many API calls.
@@ -52,28 +51,28 @@ func Run(conn db.Conn) {
 	}
 }
 
-func updateCluster(conn db.Conn, clst *cluster) *cluster {
-	namespace, err := conn.GetClusterNamespace()
+func updateCluster(clst *cluster) *cluster {
+	namespace, err := db.Open(db.ClusterTable).GetClusterNamespace()
 	if err != nil {
 		return clst
 	}
 
 	if clst == nil || clst.namespace != namespace {
-		clst = newCluster(conn, namespace)
+		clst = newCluster(namespace)
 		clst.runOnce()
-		foreman.Init(clst.conn)
+		foreman.Init()
 	}
 
 	clst.runOnce()
-	foreman.RunOnce(clst.conn)
+	foreman.RunOnce()
 
 	return clst
 }
 
-func newCluster(conn db.Conn, namespace string) *cluster {
+func newCluster(namespace string) *cluster {
 	clst := &cluster{
+		conn:      db.Open(db.ClusterTable, db.MachineTable, db.ACLTable),
 		namespace: namespace,
-		conn:      conn,
 		providers: make(map[db.Provider]provider),
 	}
 

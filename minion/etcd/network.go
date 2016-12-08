@@ -70,9 +70,8 @@ func wakeChan(conn db.Conn, store Store) chan struct{} {
 	return c
 }
 
-func runNetwork(conn db.Conn, store Store) {
-	conn = conn.Restrict(db.MinionTable, db.ContainerTable, db.LabelTable,
-		db.EtcdTable)
+func runNetwork(store Store) {
+	conn := db.Open(db.MinionTable, db.ContainerTable, db.LabelTable, db.EtcdTable)
 	for range wakeChan(conn, store) {
 		// If the etcd read failed, we only want to update the db if it
 		// failed because a key was missing (has not been created yet).

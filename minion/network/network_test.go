@@ -29,7 +29,9 @@ func (lps lportslice) Swap(i, j int) {
 func TestRunMaster(t *testing.T) {
 	client := ovsdb.NewFakeOvsdbClient()
 	client.CreateLogicalSwitch(lSwitch)
-	conn := db.New()
+
+	db.Reset()
+	conn := db.Open()
 	ovsdb.Open = func() (ovsdb.Client, error) {
 		return client, nil
 	}
@@ -84,7 +86,7 @@ func TestRunMaster(t *testing.T) {
 		client.CreateLogicalPort(lSwitch, ip, mac, ip)
 	}
 
-	runMaster(conn)
+	runMaster()
 
 	lports, err := client.ListLogicalPorts(lSwitch)
 	if err != nil {

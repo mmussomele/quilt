@@ -30,20 +30,20 @@ var (
 	sleep          = time.Sleep
 )
 
-func runMinionSync(conn db.Conn, store Store) {
+func runMinionSync(store Store) {
 	loopLog := util.NewEventTimer("Etcd")
-	conn = conn.Restrict(db.MinionTable)
-	minion := getMinion(conn)
-	go syncSubnet(conn, store, minion)
-	for range conn.TriggerTick(minionTimeout / 2).C {
+	minion := getMinion()
+	go syncSubnet(store, minion)
+	for range db.TriggerTickOn(minionTimeout/2, db.MinionTable).C {
 		loopLog.LogStart()
-		writeMinion(conn, store)
-		readMinion(conn, store)
+		writeMinion(store)
+		readMinion(store)
 		loopLog.LogEnd()
 	}
 }
 
-func getMinion(conn db.Conn) db.Minion {
+func getMinion() db.Minion {
+	conn := db.Open(db.MinionTable)
 	var minion db.Minion
 	var err error
 	for {
@@ -60,7 +60,7 @@ func getMinion(conn db.Conn) db.Minion {
 	return minion
 }
 
-func readMinion(conn db.Conn, store Store) {
+func readMinion(store Store) {
 	tree, err := store.GetTree(nodeStore)
 	if err != nil {
 		log.WithError(err).Warning("Failed to get minions from Etcd.")
@@ -84,7 +84,7 @@ func readMinion(conn db.Conn, store Store) {
 		storeMinions = append(storeMinions, m)
 	}
 
-	conn.Transact(func(view db.Database) error {
+	db.Open(db.MinionTable).Transact(func(view db.Database) error {
 		dbms, sms := filterSelf(view.SelectFromMinion(nil), storeMinions)
 		del, add := diffMinion(dbms, sms)
 
@@ -148,8 +148,8 @@ func diffMinion(dbMinions, storeMinions []db.Minion) (del, add []db.Minion) {
 	return
 }
 
-func writeMinion(conn db.Conn, store Store) {
-	minion, err := conn.MinionSelf()
+func writeMinion(store Store) {
+	minion, err := db.Open(db.MinionTable).MinionSelf()
 	if err != nil {
 		return
 	}
@@ -189,7 +189,7 @@ func generateSubnet(store Store, minion db.Minion) (net.IPNet, error) {
 	return net.IPNet{}, errors.New("failed to allocate subnet")
 }
 
-func updateSubnet(conn db.Conn, store Store, minion db.Minion) db.Minion {
+func updateSubnet(store Store, minion db.Minion) db.Minion {
 	if minion.Subnet != "" {
 		_, subnet, err := net.ParseCIDR(minion.Subnet)
 		if err != nil {
@@ -204,7 +204,7 @@ func updateSubnet(conn db.Conn, store Store, minion db.Minion) db.Minion {
 			"generating a new one.", minion.Subnet)
 
 		// Invalidate the subnet until we get a new one.
-		minion = setMinionSubnet(conn, "")
+		minion = setMinionSubnet("")
 	}
 
 	// If we failed to refresh, someone took our subnet or we never had one.
@@ -220,13 +220,13 @@ func updateSubnet(conn db.Conn, store Store, minion db.Minion) db.Minion {
 		sleep(time.Second)
 	}
 
-	return setMinionSubnet(conn, minion.Subnet)
+	return setMinionSubnet(minion.Subnet)
 }
 
-func setMinionSubnet(conn db.Conn, subnet string) db.Minion {
+func setMinionSubnet(subnet string) db.Minion {
 	var err error
 	var minion db.Minion
-	conn.Transact(func(view db.Database) error {
+	db.Open(db.MinionTable).Transact(func(view db.Database) error {
 		minion, err = view.MinionSelf()
 		if err != nil {
 			log.WithError(err).Error("Failed to get self")
@@ -240,9 +240,9 @@ func setMinionSubnet(conn db.Conn, subnet string) db.Minion {
 	return minion
 }
 
-func syncSubnet(conn db.Conn, store Store, minion db.Minion) {
+func syncSubnet(store Store, minion db.Minion) {
 	for {
-		minion = updateSubnet(conn, store, minion)
+		minion = updateSubnet(store, minion)
 		time.Sleep(subnetTTL / 4)
 	}
 }

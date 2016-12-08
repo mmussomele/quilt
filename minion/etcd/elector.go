@@ -14,19 +14,19 @@ const dir = "/minion"
 const leaderKey = dir + "/leader"
 
 // Run blocks implementing leader election.
-func runElection(conn db.Conn, store Store) {
-	go watchLeader(conn, store)
-	campaign(conn, store)
+func runElection(store Store) {
+	go watchLeader(store)
+	campaign(store)
 }
 
-func watchLeader(conn db.Conn, store Store) {
+func watchLeader(store Store) {
 	tickRate := electionTTL
 	if tickRate > 30 {
 		tickRate = 30
 	}
 
-	conn = conn.Restrict(db.EtcdTable)
 	watch := store.Watch(leaderKey, 1*time.Second)
+	conn := db.Open(db.EtcdTable)
 	trigg := conn.TriggerTick(tickRate)
 	for {
 		leader, _ := store.Get(leaderKey)
@@ -46,10 +46,10 @@ func watchLeader(conn db.Conn, store Store) {
 	}
 }
 
-func campaign(conn db.Conn, store Store) {
-	conn = conn.Restrict(db.EtcdTable, db.MinionTable)
+func campaign(store Store) {
 	watch := store.Watch(leaderKey, 1*time.Second)
-	trigg := conn.Restrict(db.EtcdTable).TriggerTick(electionTTL / 2)
+	conn := db.Open(db.EtcdTable, db.MinionTable)
+	trigg := db.TriggerTickOn(electionTTL/2, db.EtcdTable)
 
 	for {
 		select {

@@ -1,17 +1,13 @@
 package etcd
 
-import (
-	"github.com/NetSys/quilt/db"
-)
-
-// Run synchronizes state in `conn` with the Etcd cluster.
-func Run(conn db.Conn) {
+// Run synchronizes state in the Database with the Etcd cluster.
+func Run() {
 	store := NewStore()
 	makeEtcdDir(minionDir, store, 0)
 	makeEtcdDir(subnetStore, store, 0)
 	makeEtcdDir(nodeStore, store, 0)
 
-	go runElection(conn, store)
-	go runNetwork(conn, store)
-	runMinionSync(conn, store)
+	go runElection(store)
+	go runNetwork(store)
+	runMinionSync(store)
 }

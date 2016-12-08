@@ -17,12 +17,13 @@ const labelValue = "scheduler"
 const labelPair = labelKey + "=" + labelValue
 const concurrencyLimit = 32
 
-func runWorker(conn db.Conn, dk docker.Client, myIP string, subnet net.IPNet) {
+func runWorker(dk docker.Client, myIP string, subnet net.IPNet) {
 	if myIP == "" {
 		return
 	}
 
 	filter := map[string][]string{"label": {labelPair}}
+	conn := db.Open(db.MinionTable, db.ContainerTable)
 
 	var toBoot, toKill []interface{}
 	for i := 0; i < 2; i++ {

@@ -26,23 +26,25 @@ func Run() {
 
 	log.Info("Minion Start")
 
-	conn := db.New()
 	dk := docker.New("unix:///var/run/docker.sock")
 
 	// Not in a goroutine, want the plugin to start before the scheduler
 	plugin.Run()
 
-	go minionServerRun(conn)
-	go supervisor.Run(conn, dk)
-	go scheduler.Run(conn, dk)
-	go network.Run(conn, dk)
-	go etcd.Run(conn)
-	go syncAuthorizedKeys(conn)
+	go minionServerRun()
+	go supervisor.Run(dk)
+	go scheduler.Run(dk)
+	go network.Run(dk)
+	go etcd.Run()
+	go syncAuthorizedKeys()
 
-	go apiServer.Run(conn, fmt.Sprintf("tcp://0.0.0.0:%d", api.DefaultRemotePort))
+	go apiServer.Run(fmt.Sprintf("tcp://0.0.0.0:%d", api.DefaultRemotePort))
+
+	conn := db.Open(db.MinionTable, db.ConnectionTable, db.PlacementTable,
+		db.ContainerTable)
 
 	loopLog := util.NewEventTimer("Minion-Update")
-	for range conn.Restrict(db.MinionTable).Trigger().C {
+	for range db.TriggerOn(db.MinionTable).C {
 		loopLog.LogStart()
 		conn.Transact(func(view db.Database) error {
 			minion, err := view.MinionSelf()

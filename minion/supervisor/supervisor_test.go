@@ -368,10 +368,11 @@ type testCtx struct {
 }
 
 func initTest() *testCtx {
-	conn := db.New()
+	db.Reset()
+	conn := db.Open()
 	md, dk := docker.NewMock()
 	ctx := testCtx{supervisor{}, fakeDocker{dk, md}, nil, conn,
-		conn.Restrict(db.MinionTable, db.EtcdTable).Trigger()}
+		db.TriggerOn(db.MinionTable, db.EtcdTable)}
 	ctx.sv.conn = ctx.conn
 	ctx.sv.dk = ctx.fd.Client
 

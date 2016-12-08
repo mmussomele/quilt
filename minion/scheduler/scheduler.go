@@ -17,20 +17,19 @@ import (
 )
 
 // Run blocks implementing the scheduler module.
-func Run(conn db.Conn, dk docker.Client) {
-	conn = conn.Restrict(db.MinionTable, db.ContainerTable, db.PlacementTable,
-		db.EtcdTable)
-
-	bootWait(conn)
-
-	subnet := getMinionSubnet(conn)
+func Run(dk docker.Client) {
+	bootWait()
+	subnet := getMinionSubnet()
 	err := dk.ConfigureNetwork(plugin.NetworkName, subnet)
 	if err != nil {
 		log.WithError(err).Fatal("Failed to configure network plugin")
 	}
 
+	conn := db.Open(db.MinionTable)
 	loopLog := util.NewEventTimer("Scheduler")
-	for range conn.TriggerTick(60).C {
+	for range db.TriggerTickOn(60, db.MinionTable, db.ContainerTable,
+		db.PlacementTable, db.EtcdTable).C {
+
 		loopLog.LogStart()
 		minion, err := conn.MinionSelf()
 		if err != nil {
@@ -39,16 +38,17 @@ func Run(conn db.Conn, dk docker.Client) {
 		}
 
 		if minion.Role == db.Worker {
-			subnet = updateNetwork(conn, dk, subnet)
-			runWorker(conn, dk, minion.PrivateIP, subnet)
+			subnet = updateNetwork(dk, subnet)
+			runWorker(dk, minion.PrivateIP, subnet)
 		} else if minion.Role == db.Master {
-			runMaster(conn)
+			runMaster()
 		}
 		loopLog.LogEnd()
 	}
 }
 
-func bootWait(conn db.Conn) {
+func bootWait() {
+	conn := db.Open(db.MinionTable)
 	for workerCount := 0; workerCount <= 0; {
 		workerCount = 0
 		for _, m := range conn.SelectFromMinion(nil) {
@@ -60,7 +60,8 @@ func bootWait(conn db.Conn) {
 	}
 }
 
-func getMinionSubnet(conn db.Conn) net.IPNet {
+func getMinionSubnet() net.IPNet {
+	conn := db.Open(db.MinionTable)
 	for {
 		minion, err := conn.MinionSelf()
 		if err != nil {
@@ -81,9 +82,8 @@ func getMinionSubnet(conn db.Conn) net.IPNet {
 	}
 }
 
-func updateNetwork(conn db.Conn, dk docker.Client, subnet net.IPNet) net.IPNet {
-
-	newSubnet := getMinionSubnet(conn)
+func updateNetwork(dk docker.Client, subnet net.IPNet) net.IPNet {
+	newSubnet := getMinionSubnet()
 	if subnet.String() == newSubnet.String() {
 		return subnet
 	}

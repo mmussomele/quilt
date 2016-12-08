@@ -22,19 +22,17 @@ import (
 	log "github.com/Sirupsen/logrus"
 )
 
-type server struct {
-	dbConn db.Conn
-}
+type server struct{}
 
 // Run accepts incoming `quiltctl` connections and responds to them.
-func Run(conn db.Conn, listenAddr string) error {
+func Run(listenAddr string) error {
 	proto, addr, err := api.ParseListenAddress(listenAddr)
 	if err != nil {
 		return err
 	}
 
 	var sock net.Listener
-	apiServer := server{conn}
+	apiServer := server{}
 	for {
 		sock, err = net.Listen(proto, addr)
 
@@ -63,9 +61,21 @@ func Run(conn db.Conn, listenAddr string) error {
 	return nil
 }
 
-func (s server) Query(cts context.Context, query *pb.DBQuery) (*pb.QueryReply, error) {
+func (s server) Query(cts context.Context, query *pb.DBQuery) (reply *pb.QueryReply,
+	err error) {
+	defer func() {
+		// If the queried table is not valid, db.Open will panic.
+		if r := recover(); r != nil {
+			reply = nil
+			err = fmt.Errorf("unrecognized table: %s", query.Table)
+		}
+	}()
+
 	var rows interface{}
-	err := s.dbConn.Transact(func(view db.Database) error {
+	// Only one table type will ever be accessed, so we can just open a connection
+	// to that table.
+	conn := db.Open(db.TableType(query.Table))
+	conn.Transact(func(view db.Database) error {
 		switch db.TableType(query.Table) {
 		case db.MachineTable:
 			rows = view.SelectFromMachine(nil)
@@ -80,13 +90,10 @@ func (s server) Query(cts context.Context, query *pb.DBQuery) (*pb.QueryReply, e
 		case db.ClusterTable:
 			rows = view.SelectFromCluster(nil)
 		default:
-			return fmt.Errorf("unrecognized table: %s", query.Table)
+			panic("not reached")
 		}
 		return nil
 	})
-	if err != nil {
-		return nil, err
-	}
 
 	json, err := json.Marshal(rows)
 	if err != nil {
@@ -109,7 +116,7 @@ func (s server) Deploy(cts context.Context, deployReq *pb.DeployRequest) (
 			"machines", ipdef.MaxMinionCount)
 	}
 
-	err = s.dbConn.Transact(func(view db.Database) error {
+	err = db.Open(db.ClusterTable).Transact(func(view db.Database) error {
 		cluster, err := view.GetCluster()
 		if err != nil {
 			cluster = view.InsertCluster()

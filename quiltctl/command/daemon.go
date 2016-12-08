@@ -3,7 +3,6 @@ package command
 import (
 	"github.com/NetSys/quilt/api/server"
 	"github.com/NetSys/quilt/cluster"
-	"github.com/NetSys/quilt/db"
 	"github.com/NetSys/quilt/engine"
 )
 
@@ -26,9 +25,8 @@ func (dCmd *Daemon) Parse(args []string) error {
 
 // Run starts the daemon.
 func (dCmd *Daemon) Run() int {
-	conn := db.New()
-	go engine.Run(conn)
-	go server.Run(conn, dCmd.host)
-	cluster.Run(conn)
+	go engine.Run()
+	go server.Run(dCmd.host)
+	cluster.Run()
 	return 0
 }

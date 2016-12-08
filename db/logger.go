@@ -11,7 +11,7 @@ func (conn Conn) runLogger() {
 	for _, t := range allTables {
 		t := t
 		go func() {
-			for range conn.Restrict(t).Trigger().C {
+			for range conn.restrict(t).Trigger().C {
 				conn.logTable(t)
 			}
 		}()

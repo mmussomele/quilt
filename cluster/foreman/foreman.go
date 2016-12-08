@@ -41,13 +41,13 @@ type minion struct {
 
 // Init the first time the foreman operates on a new namespace.  It queries the currently
 // running VMs for their previously assigned roles, and writes them to the database.
-func Init(conn db.Conn) {
+func Init() {
 	for _, m := range minions {
 		m.client.Close()
 	}
 	minions = map[string]*minion{}
 
-	conn.Transact(func(view db.Database) error {
+	db.Open(db.MachineTable).Transact(func(view db.Database) error {
 		machines := view.SelectFromMachine(func(m db.Machine) bool {
 			return m.PublicIP != "" && m.PrivateIP != "" && m.CloudID != ""
 		})
@@ -74,9 +74,11 @@ func Init(conn db.Conn) {
 }
 
 // RunOnce should be called regularly to allow the foreman to update minion roles.
-func RunOnce(conn db.Conn) {
+func RunOnce() {
 	var spec string
 	var machines []db.Machine
+
+	conn := db.Open(db.MachineTable, db.ClusterTable)
 	conn.Transact(func(view db.Database) error {
 		machines = view.SelectFromMachine(func(m db.Machine) bool {
 			return m.PublicIP != "" && m.PrivateIP != "" && m.CloudID != ""
