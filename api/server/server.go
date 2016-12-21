@@ -23,7 +23,7 @@ import (
 )
 
 type server struct {
-	dbConn db.Conn
+	conn db.Conn
 }
 
 // Run accepts incoming `quiltctl` connections and responds to them.
@@ -67,17 +67,17 @@ func (s server) Query(cts context.Context, query *pb.DBQuery) (*pb.QueryReply, e
 	var rows interface{}
 	switch db.TableType(query.Table) {
 	case db.MachineTable:
-		rows = s.dbConn.SelectFromMachine(nil)
+		rows = s.conn.SelectFromMachine(nil)
 	case db.ContainerTable:
-		rows = s.dbConn.SelectFromContainer(nil)
+		rows = s.conn.SelectFromContainer(nil)
 	case db.EtcdTable:
-		rows = s.dbConn.SelectFromEtcd(nil)
+		rows = s.conn.SelectFromEtcd(nil)
 	case db.ConnectionTable:
-		rows = s.dbConn.SelectFromConnection(nil)
+		rows = s.conn.SelectFromConnection(nil)
 	case db.LabelTable:
-		rows = s.dbConn.SelectFromLabel(nil)
+		rows = s.conn.SelectFromLabel(nil)
 	case db.ClusterTable:
-		rows = s.dbConn.SelectFromCluster(nil)
+		rows = s.conn.SelectFromCluster(nil)
 	default:
 		return nil, fmt.Errorf("unrecognized table: %s", query.Table)
 	}
@@ -103,7 +103,7 @@ func (s server) Deploy(cts context.Context, deployReq *pb.DeployRequest) (
 			"machines", ipdef.MaxMinionCount)
 	}
 
-	err = s.dbConn.Txn(db.ClusterTable).Run(func(view db.Database) error {
+	err = s.conn.Txn(db.ClusterTable).Run(func(view db.Database) error {
 		cluster, err := view.GetCluster()
 		if err != nil {
 			cluster = view.InsertCluster()

@@ -66,7 +66,7 @@ func TestContainerResponse(t *testing.T) {
 
 func TestBadDeployment(t *testing.T) {
 	conn := db.New()
-	s := server{dbConn: conn}
+	s := server{conn: conn}
 
 	badDeployment := `{`
 
@@ -78,7 +78,7 @@ func TestBadDeployment(t *testing.T) {
 
 func TestDeploy(t *testing.T) {
 	conn := db.New()
-	s := server{dbConn: conn}
+	s := server{conn: conn}
 
 	createMachineDeployment := `
 	{"Machines":[
@@ -114,7 +114,7 @@ func TestDeploy(t *testing.T) {
 
 func TestVagrantDeployment(t *testing.T) {
 	conn := db.New()
-	s := server{dbConn: conn}
+	s := server{conn: conn}
 
 	vagrantDeployment := `
 	{"Machines":[
