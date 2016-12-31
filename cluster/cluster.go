@@ -9,6 +9,7 @@ import (
 	"github.com/NetSys/quilt/cluster/foreman"
 	"github.com/NetSys/quilt/cluster/google"
 	"github.com/NetSys/quilt/cluster/machine"
+	"github.com/NetSys/quilt/cluster/region"
 	"github.com/NetSys/quilt/cluster/vagrant"
 	"github.com/NetSys/quilt/db"
 	"github.com/NetSys/quilt/join"
@@ -74,7 +75,11 @@ func updateCluster(conn db.Conn, clst *cluster) *cluster {
 	}
 
 	if clst == nil || clst.namespace != namespace {
-		clst = newCluster(conn, namespace)
+		clst, err = newCluster(conn, namespace)
+		if err != nil {
+			return clst
+		}
+
 		clst.runOnce()
 		foreman.Init(clst.conn)
 	}
@@ -85,15 +90,32 @@ func updateCluster(conn db.Conn, clst *cluster) *cluster {
 	return clst
 }
 
-func newCluster(conn db.Conn, namespace string) *cluster {
+func newCluster(conn db.Conn, namespace string) (*cluster, error) {
 	clst := &cluster{
 		namespace: namespace,
 		conn:      conn,
 		providers: make(map[instance]provider),
 	}
 
+	var err error
+	var dbClst db.Cluster
+	conn.Txn(db.ClusterTable).Run(func(view db.Database) error {
+		dbClst, err = view.GetCluster()
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	for _, p := range allProviders {
-		for _, r := range validRegions(p) {
+		regions, ok := dbClst.Regions[p]
+		if !ok {
+			// If the provider regions weren't specified, assume all regions
+			// are desired.
+			regions = []string{region.Default(p)}
+		}
+
+		for _, r := range regions {
 			prvdr, err := newProvider(p, namespace, r)
 			if err != nil {
 				log.Debugf("Failed to connect to provider %s in %s: %s",
@@ -104,7 +126,7 @@ func newCluster(conn db.Conn, namespace string) *cluster {
 		}
 	}
 
-	return clst
+	return clst, nil
 }
 
 func (clst cluster) runOnce() {
@@ -447,20 +469,7 @@ func newProviderImpl(p db.Provider, namespace, region string) (provider, error) 
 	case db.Vagrant:
 		return vagrant.New(namespace)
 	default:
-		panic("Unimplemented")
-	}
-}
-
-func validRegionsImpl(p db.Provider) []string {
-	switch p {
-	case db.Amazon:
-		return amazon.Regions
-	case db.Google:
-		return google.Zones
-	case db.Vagrant:
-		return []string{""} // Vagrant has no regions
-	default:
-		panic("Unimplemented")
+		panic("Unimplemented " + string(p))
 	}
 }
 
@@ -475,4 +484,3 @@ func groupByRegion(machines []machine.Machine) map[string][]machine.Machine {
 
 // Stored in variables so they may be mocked out
 var newProvider = newProviderImpl
-var validRegions = validRegionsImpl

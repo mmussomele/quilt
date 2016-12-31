@@ -11,6 +11,7 @@ type Cluster struct {
 
 	Namespace string // Cloud Provider Namespace
 	Spec      string `rowStringer:"omit"`
+	Regions   map[Provider][]string
 }
 
 // InsertCluster creates a new Cluster and interts it into 'db'.

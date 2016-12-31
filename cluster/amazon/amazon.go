@@ -34,20 +34,42 @@ type awsID struct {
 	region string
 }
 
-// DefaultRegion is the preferred location for machines which haven't a user specified
-// region preference.
-const DefaultRegion = "us-west-1"
-
 // Regions is the list of supported AWS regions.
-var Regions = []string{"ap-southeast-2", "us-west-1", "us-west-2"}
+var Regions = []string{
+	"us-east-1",
+	"us-east-2",
+	"us-west-1",
+	"us-west-2",
+	"ca-central-1",
+	"eu-west-1",
+	"eu-central-1",
+	"eu-west-2",
+	"ap-northeast-1",
+	"ap-northeast-2",
+	"ap-southeast-1",
+	"ap-southeast-2",
+	"ap-south-1",
+	"sa-east-1",
+}
 
 const spotPrice = "0.5"
 
 // Ubuntu 16.04, 64-bit hvm-ssd
 var amis = map[string]string{
-	"ap-southeast-2": "ami-550c3c36",
-	"us-west-1":      "ami-26074946",
-	"us-west-2":      "ami-e1fe2281",
+	"us-east-1":      "ami-0b33d91d", // North Virginia
+	"us-east-2":      "ami-c55673a0", // Ohio
+	"us-west-1":      "ami-165a0876", // North California
+	"us-west-2":      "ami-f173cc91", // Oregon
+	"ca-central-1":   "ami-ebed508f", // Canada
+	"eu-west-1":      "ami-70edb016", // Ireland
+	"eu-central-1":   "ami-af0fc0c0", // Frankfurt
+	"eu-west-2":      "ami-f1949e95", // London
+	"ap-northeast-1": "ami-56d4ad31", // Tokyo
+	"ap-northeast-2": "ami-dac312b4", // Seoul
+	"ap-southeast-1": "ami-dc9339bf", // Singapore
+	"ap-southeast-2": "ami-1c47407f", // Sydney
+	"ap-south-1":     "ami-f9daac96", // Mumbai
+	"sa-east-1":      "ami-80086dec", // Sao Paulo
 }
 
 var sleep = time.Sleep
@@ -294,9 +316,11 @@ func (clst *Cluster) List() ([]machine.Machine, error) {
 				machine.Size = *inst.InstanceType
 			}
 
-			if len(inst.BlockDeviceMappings) != 0 {
-				volumeID := inst.BlockDeviceMappings[0].
-					Ebs.VolumeId
+			// Some AWS instances now boot with multiple BlockDeviceMappings,
+			// so we need to find the one associated with "/dev/sda1" and
+			// report the disk size of that volume.
+			for _, dev := range inst.BlockDeviceMappings {
+				volumeID := dev.Ebs.VolumeId
 				filters := []*ec2.Filter{
 					{
 						Name: aws.String("volume-id"),
@@ -313,9 +337,20 @@ func (clst *Cluster) List() ([]machine.Machine, error) {
 				if err != nil {
 					return nil, err
 				}
-				if len(volumeInfo.Volumes) == 1 {
-					machine.DiskSize = int(
-						*volumeInfo.Volumes[0].Size)
+
+				if len(volumeInfo.Volumes) != 1 {
+					continue
+				}
+
+				volume := volumeInfo.Volumes[0]
+				if len(volume.Attachments) != 1 {
+					continue
+				}
+
+				attachment := volume.Attachments[0]
+				if *attachment.Device == "/dev/sda1" {
+					machine.DiskSize = int(*volume.Size)
+					break
 				}
 			}
 

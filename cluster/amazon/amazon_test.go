@@ -16,6 +16,7 @@ import (
 	"github.com/NetSys/quilt/cluster/acl"
 	"github.com/NetSys/quilt/cluster/cloudcfg"
 	"github.com/NetSys/quilt/cluster/machine"
+	"github.com/NetSys/quilt/cluster/region"
 	"github.com/NetSys/quilt/db"
 	"github.com/NetSys/quilt/util"
 )
@@ -127,9 +128,9 @@ func TestList(t *testing.T) {
 		&ec2.DescribeAddressesOutput{}, nil,
 	)
 
-	amazonCluster := newAmazon(testNamespace, DefaultRegion)
-	amazonCluster.newClient = func(region string) client {
-		if region == DefaultRegion {
+	amazonCluster := newAmazon(testNamespace, region.Default(db.Amazon))
+	amazonCluster.newClient = func(r string) client {
+		if r == region.Default(db.Amazon) {
 			return mc
 		}
 		return emptyClient
@@ -145,19 +146,19 @@ func TestList(t *testing.T) {
 			PublicIP:  "publicIP",
 			PrivateIP: "privateIP",
 			Size:      "size",
-			Region:    DefaultRegion,
+			Region:    region.Default(db.Amazon),
 		},
 		{
 			ID:         "spot2",
 			Provider:   db.Amazon,
-			Region:     DefaultRegion,
+			Region:     region.Default(db.Amazon),
 			Size:       "size2",
 			FloatingIP: "xx.xxx.xxx.xxx",
 		},
 		{
 			ID:       "spot3",
 			Provider: db.Amazon,
-			Region:   DefaultRegion,
+			Region:   region.Default(db.Amazon),
 		},
 	}, spots)
 }
@@ -212,7 +213,7 @@ func TestNewACLs(t *testing.T) {
 		&ec2.DescribeInstancesOutput{}, nil,
 	)
 
-	cluster := newAmazon(testNamespace, DefaultRegion)
+	cluster := newAmazon(testNamespace, region.Default(db.Amazon))
 	cluster.newClient = func(region string) client {
 		return mc
 	}
@@ -411,19 +412,19 @@ func TestBoot(t *testing.T) {
 		}, nil,
 	)
 
-	amazonCluster := newAmazon(testNamespace, DefaultRegion)
+	amazonCluster := newAmazon(testNamespace, region.Default(db.Amazon))
 	amazonCluster.newClient = func(region string) client {
 		return mc
 	}
 
 	err := amazonCluster.Boot([]machine.Machine{
 		{
-			Region:   DefaultRegion,
+			Region:   region.Default(db.Amazon),
 			Size:     "m4.large",
 			DiskSize: 32,
 		},
 		{
-			Region:   DefaultRegion,
+			Region:   region.Default(db.Amazon),
 			Size:     "m4.large",
 			DiskSize: 32,
 		},
@@ -435,7 +436,7 @@ func TestBoot(t *testing.T) {
 		&ec2.RequestSpotInstancesInput{
 			SpotPrice: aws.String(spotPrice),
 			LaunchSpecification: &ec2.RequestSpotLaunchSpecification{
-				ImageId:      aws.String(amis[DefaultRegion]),
+				ImageId:      aws.String(amis[region.Default(db.Amazon)]),
 				InstanceType: aws.String("m4.large"),
 				UserData: aws.String(base64.StdEncoding.EncodeToString(
 					[]byte(cfg))),
@@ -502,18 +503,18 @@ func TestStop(t *testing.T) {
 		&ec2.DescribeAddressesOutput{}, nil,
 	)
 
-	amazonCluster := newAmazon(testNamespace, DefaultRegion)
+	amazonCluster := newAmazon(testNamespace, region.Default(db.Amazon))
 	amazonCluster.newClient = func(region string) client {
 		return mc
 	}
 
 	err := amazonCluster.Stop([]machine.Machine{
 		{
-			Region: DefaultRegion,
+			Region: region.Default(db.Amazon),
 			ID:     toStopIDs[0],
 		},
 		{
-			Region: DefaultRegion,
+			Region: region.Default(db.Amazon),
 			ID:     toStopIDs[1],
 		},
 	})
@@ -621,12 +622,13 @@ func TestWaitBoot(t *testing.T) {
 		}, nil,
 	)
 
-	amazonCluster := newAmazon(testNamespace, DefaultRegion)
+	amazonCluster := newAmazon(testNamespace, region.Default(db.Amazon))
 	amazonCluster.newClient = func(region string) client {
 		return mc
 	}
 
-	exp := []awsID{{"spot1", DefaultRegion}, {"spot2", DefaultRegion}}
+	exp := []awsID{{"spot1", region.Default(db.Amazon)},
+		{"spot2", region.Default(db.Amazon)}}
 	err := amazonCluster.wait(exp, true)
 	assert.Error(t, err, "timed out")
 
@@ -740,12 +742,13 @@ func TestWaitStop(t *testing.T) {
 		}, nil,
 	)
 
-	amazonCluster := newAmazon(testNamespace, DefaultRegion)
+	amazonCluster := newAmazon(testNamespace, region.Default(db.Amazon))
 	amazonCluster.newClient = func(region string) client {
 		return mc
 	}
 
-	exp := []awsID{{"spot1", DefaultRegion}, {"spot2", DefaultRegion}}
+	exp := []awsID{{"spot1", region.Default(db.Amazon)},
+		{"spot2", region.Default(db.Amazon)}}
 	err := amazonCluster.wait(exp, false)
 	assert.Error(t, err, "timed out")
 
@@ -772,7 +775,7 @@ func TestUpdateFloatingIPs(t *testing.T) {
 	t.Parallel()
 
 	mockClient := new(mockClient)
-	amazonCluster := newAmazon(testNamespace, DefaultRegion)
+	amazonCluster := newAmazon(testNamespace, region.Default(db.Amazon))
 	amazonCluster.newClient = func(region string) client {
 		return mockClient
 	}

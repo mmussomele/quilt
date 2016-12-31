@@ -8,9 +8,12 @@ import (
 
 	"github.com/NetSys/quilt/cluster/acl"
 	"github.com/NetSys/quilt/cluster/machine"
+	"github.com/NetSys/quilt/cluster/region"
 	"github.com/NetSys/quilt/db"
 	"github.com/NetSys/quilt/stitch"
 	"github.com/stretchr/testify/assert"
+
+	log "github.com/Sirupsen/logrus"
 )
 
 var FakeAmazon db.Provider = "FakeAmazon"
@@ -68,6 +71,10 @@ func newFakeProvider(p db.Provider, namespace, region string) (provider, error) 
 	}
 
 	return &ret, nil
+}
+
+func defaultFakeRegion(p db.Provider) []string {
+	return []string{testRegion}
 }
 
 func (p *fakeProvider) clearLogs() {
@@ -135,7 +142,20 @@ func (p *fakeProvider) ChooseSize(ram stitch.Range, cpu stitch.Range,
 func newTestCluster(namespace string) *cluster {
 	sleep = func(t time.Duration) {}
 	mock()
-	return newCluster(db.New(), namespace)
+	conn := db.New()
+	conn.Txn(db.ClusterTable).Run(func(view db.Database) error {
+		c := view.InsertCluster()
+		c.Regions = make(map[db.Provider][]string)
+		for _, p := range allProviders {
+			c.Regions[p] = []string{testRegion}
+		}
+		c.Regions[FakeAmazon] = []string{testRegion}
+		c.Regions[FakeVagrant] = []string{testRegion}
+		view.Commit(c)
+		return nil
+	})
+	clst, _ := newCluster(conn, namespace)
+	return clst
 }
 
 func TestPanicBadProvider(t *testing.T) {
@@ -147,6 +167,12 @@ func TestPanicBadProvider(t *testing.T) {
 	}()
 	allProviders = []db.Provider{FakeAmazon}
 	conn := db.New()
+	conn.Txn(db.ClusterTable).Run(func(view db.Database) error {
+		c := view.InsertCluster()
+		c.Namespace = "ns"
+		view.Commit(c)
+		return nil
+	})
 	newCluster(conn, "test")
 }
 
@@ -459,6 +485,14 @@ func TestACLs(t *testing.T) {
 
 func TestUpdateCluster(t *testing.T) {
 	conn := db.New()
+	mock()
+	oldDefault := region.Default
+	region.Default = func(p db.Provider) string {
+		return testRegion
+	}
+	defer func() {
+		region.Default = oldDefault
+	}()
 
 	clst := updateCluster(conn, nil)
 	assert.Nil(t, clst)
@@ -538,7 +572,7 @@ func TestMultiRegionDeploy(t *testing.T) {
 		db.ClusterTable).Run(func(view db.Database) error {
 
 		for _, p := range allProviders {
-			for _, r := range validRegions(p) {
+			for _, r := range defaultFakeRegion(p) {
 				m := view.InsertMachine()
 				m.Provider = p
 				m.Region = r
@@ -547,11 +581,9 @@ func TestMultiRegionDeploy(t *testing.T) {
 			}
 		}
 
-		c := view.InsertCluster()
-		c.Namespace = "ns"
-		view.Commit(c)
 		return nil
 	})
+	setNamespace(clst.conn, "ns")
 
 	for i := 0; i < 2; i++ {
 		clst.runOnce()
@@ -569,7 +601,7 @@ func TestMultiRegionDeploy(t *testing.T) {
 	clst.conn.Txn(db.MachineTable).Run(func(view db.Database) error {
 		m := view.SelectFromMachine(func(m db.Machine) bool {
 			return m.Provider == FakeAmazon &&
-				m.Region == validRegions(FakeAmazon)[0]
+				m.Region == defaultFakeRegion(FakeAmazon)[0]
 		})
 
 		assert.Len(t, m, 1)
@@ -584,7 +616,7 @@ func TestMultiRegionDeploy(t *testing.T) {
 	assert.NotContains(t, machinesRemaining, machine.Machine{
 		Size:     "size1",
 		Provider: FakeAmazon,
-		Region:   validRegions(FakeAmazon)[0],
+		Region:   defaultFakeRegion(FakeAmazon)[0],
 	})
 	cloudMachines, err := clst.get()
 	assert.NoError(t, err)
@@ -600,6 +632,7 @@ func setNamespace(conn db.Conn, ns string) {
 	conn.Txn(db.AllTables...).Run(func(view db.Database) error {
 		clst, err := view.GetCluster()
 		if err != nil {
+			log.Info("Cluster get error: ", err)
 			clst = view.InsertCluster()
 		}
 
@@ -611,7 +644,6 @@ func setNamespace(conn db.Conn, ns string) {
 
 func mock() {
 	newProvider = newFakeProvider
-	validRegions = fakeValidRegions
 	allProviders = []db.Provider{FakeAmazon, FakeVagrant}
 }
 

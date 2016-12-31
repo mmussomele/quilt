@@ -36,10 +36,6 @@ import (
 	compute "google.golang.org/api/compute/v1"
 )
 
-// DefaultRegion is the preferred location for machines which haven't a user specified
-// region preference.
-const DefaultRegion = "us-east1-b"
-
 // Zones is the list of supported GCE zones
 var Zones = []string{"us-central1-a", "us-east1-b", "europe-west1-b"}
 

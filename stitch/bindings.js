@@ -14,6 +14,7 @@ function Deployment(deploymentOpts) {
     this.maxPrice = deploymentOpts.maxPrice || 0;
     this.namespace = deploymentOpts.namespace || "default-namespace";
     this.adminACL = deploymentOpts.adminACL || [];
+    this.regions = deploymentOpts.regions || {};
 
     this.machines = [];
     this.containers = {};
@@ -114,6 +115,7 @@ Deployment.prototype.toQuiltRepresentation = function() {
 
         namespace: this.namespace,
         adminACL: this.adminACL,
+        regions: this.regions,
         maxPrice: this.maxPrice
     };
 };

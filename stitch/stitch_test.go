@@ -15,16 +15,22 @@ import (
 func TestMachine(t *testing.T) {
 	t.Parallel()
 
-	checkMachines(t, `deployment.deploy([new Machine({
-		role: "Worker",
-		provider: "Amazon",
-		region: "us-west-2",
-		size: "m4.large",
-		cpu: new Range(2, 4),
-		ram: new Range(4, 8),
-		diskSize: 32,
-		sshKeys: ["key1", "key2"]
-	})])`,
+	checkMachines(t, `
+	var deployment = createDeployment({
+                namespace: "ns",
+                adminACL: ["local"],
+                regions: {"Amazon": ["us-west-2"]},
+        });
+	deployment.deploy([new Machine({
+                role: "Worker",
+                provider: "Amazon",
+                region: "us-west-2",
+                size: "m4.large",
+                cpu: new Range(2, 4),
+                ram: new Range(4, 8),
+                diskSize: 32,
+                sshKeys: ["key1", "key2"]
+        })])`,
 		[]Machine{
 			{
 				ID:       "abef9486d86c626156a54c2afb542cb469c412fb",
@@ -38,8 +44,14 @@ func TestMachine(t *testing.T) {
 				SSHKeys:  []string{"key1", "key2"},
 			}})
 
-	checkMachines(t, `var baseMachine = new Machine({provider: "Amazon"});
-		deployment.deploy(baseMachine.asMaster().replicate(2));`,
+	checkMachines(t, `
+	var deployment = createDeployment({
+                namespace: "ns",
+                adminACL: ["local"],
+                regions: {"Amazon": [""]},
+        });
+	var baseMachine = new Machine({provider: "Amazon"});
+	deployment.deploy(baseMachine.asMaster().replicate(2));`,
 		[]Machine{
 			{
 				ID:       "3b863122cff01d0e3a21e39df480a98950e40eca",
@@ -56,10 +68,16 @@ func TestMachine(t *testing.T) {
 		},
 	)
 
-	checkMachines(t, `var baseMachine = new Machine({provider: "Amazon"});
-		var machines = baseMachine.asMaster().replicate(2);
-		machines[0].sshKeys.push("key");
-		deployment.deploy(machines);`,
+	checkMachines(t, `
+	var deployment = createDeployment({
+                namespace: "ns",
+                adminACL: ["local"],
+                regions: {"Amazon": [""]},
+        });
+	var baseMachine = new Machine({provider: "Amazon"});
+	var machines = baseMachine.asMaster().replicate(2);
+	machines[0].sshKeys.push("key");
+	deployment.deploy(machines);`,
 		[]Machine{
 			{
 				ID:       "d614f26d7c29e10daae511e6187d8605ee2be23c",

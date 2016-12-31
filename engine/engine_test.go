@@ -141,7 +141,11 @@ func TestEngine(t *testing.T) {
 }
 
 func TestSort(t *testing.T) {
-	pre := `var baseMachine = new Machine({provider: "Amazon", size: "m4.large"});`
+	pre := `var deployment = createDeployment({
+		namespace: "namespace",
+		adminACL: ["1.2.3.4/32"],
+	});
+	var baseMachine = new Machine({provider: "Amazon", size: "m4.large"});`
 	conn := db.New()
 
 	updateStitch(t, conn, prog(t, pre+`

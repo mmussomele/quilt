@@ -13,16 +13,18 @@ import (
 	// the Stitch VM.
 	_ "github.com/robertkrimen/otto/underscore"
 
+	"github.com/NetSys/quilt/db"
 	"github.com/NetSys/quilt/util"
 )
 
 // A Stitch is an abstract representation of the policy language.
 type Stitch struct {
-	Containers  []Container  `json:",omitempty"`
-	Labels      []Label      `json:",omitempty"`
-	Connections []Connection `json:",omitempty"`
-	Placements  []Placement  `json:",omitempty"`
-	Machines    []Machine    `json:",omitempty"`
+	Containers  []Container              `json:",omitempty"`
+	Labels      []Label                  `json:",omitempty"`
+	Connections []Connection             `json:",omitempty"`
+	Placements  []Placement              `json:",omitempty"`
+	Machines    []Machine                `json:",omitempty"`
+	Regions     map[db.Provider][]string `json:",omitempty"`
 
 	AdminACL  []string `json:",omitempty"`
 	MaxPrice  float64  `json:",omitempty"`

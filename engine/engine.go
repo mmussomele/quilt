@@ -1,7 +1,11 @@
 package engine
 
 import (
+	"errors"
+	"strings"
+
 	"github.com/NetSys/quilt/cluster"
+	"github.com/NetSys/quilt/cluster/region"
 	"github.com/NetSys/quilt/db"
 	"github.com/NetSys/quilt/join"
 	"github.com/NetSys/quilt/stitch"
@@ -16,8 +20,11 @@ var defaultDiskSize = 32
 // Run updates the database in response to stitch changes in the cluster table.
 func Run(conn db.Conn) {
 	for range conn.TriggerTick(30, db.ClusterTable, db.MachineTable, db.ACLTable).C {
-		conn.Txn(db.ACLTable, db.ClusterTable,
+		err := conn.Txn(db.ACLTable, db.ClusterTable,
 			db.MachineTable).Run(updateTxn)
+		if err != nil && strings.HasPrefix(err.Error(), errBadRegionMsg) {
+			log.WithError(err).Error("Failed to update engine")
+		}
 	}
 }
 
@@ -32,10 +39,17 @@ func updateTxn(view db.Database) error {
 		return err
 	}
 
+	maxPrice := stitch.MaxPrice
+	stitchMachines := toDBMachine(stitch.Machines, maxPrice)
+	if err := checkRegions(stitchMachines, stitch.Regions); err != nil {
+		return err
+	}
+
 	cluster.Namespace = stitch.Namespace
+	cluster.Regions = stitch.Regions
 	view.Commit(cluster)
 
-	machineTxn(view, stitch)
+	machineTxn(view, maxPrice, stitchMachines)
 	aclTxn(view, stitch)
 	return nil
 }
@@ -109,7 +123,7 @@ func toDBMachine(machines []stitch.Machine, maxPrice float64) []db.Machine {
 		m.SSHKeys = stitchm.SSHKeys
 		m.Region = stitchm.Region
 		m.FloatingIP = stitchm.FloatingIP
-		dbMachines = append(dbMachines, cluster.DefaultRegion(m))
+		dbMachines = append(dbMachines, region.SetDefault(m))
 	}
 
 	if hasMaster && !hasWorker {
@@ -123,11 +137,8 @@ func toDBMachine(machines []stitch.Machine, maxPrice float64) []db.Machine {
 	return dbMachines
 }
 
-func machineTxn(view db.Database, stitch stitch.Stitch) {
+func machineTxn(view db.Database, maxPrice float64, stitchMachines []db.Machine) error {
 	// XXX: How best to deal with machines that don't specify enough information?
-	maxPrice := stitch.MaxPrice
-	stitchMachines := toDBMachine(stitch.Machines, maxPrice)
-
 	dbMachines := view.SelectFromMachine(nil)
 
 	scoreFun := func(left, right interface{}) int {
@@ -187,6 +198,37 @@ func machineTxn(view db.Database, stitch stitch.Stitch) {
 		dbMachine.FloatingIP = stitchMachine.FloatingIP
 		view.Commit(dbMachine)
 	}
+
+	return nil
+}
+
+var errBadRegionMsg = "machine region not in specified regions: "
+
+func checkRegions(machines []db.Machine, regions map[db.Provider][]string) error {
+	for _, m := range machines {
+		prov := db.Provider(m.Provider)
+		validRegions, ok := regions[prov]
+		if !ok {
+			// If no regions are specified, the default alone is assumed
+			validRegions = []string{region.Default(prov)}
+		}
+
+		if !contains(validRegions, m.Region) {
+			return errors.New(errBadRegionMsg + m.Region)
+		}
+	}
+
+	return nil
+}
+
+func contains(ls []string, it string) bool {
+	for _, a := range ls {
+		if a == it {
+			return true
+		}
+	}
+
+	return false
 }
 
 func resolveACLs(acls []string) []string {
