@@ -6,21 +6,29 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"reflect"
 	"sync"
 
-	"github.com/cenk/rpc2"
-	"github.com/cenk/rpc2/jsonrpc"
+	"os"
+
+	"github.com/cenkalti/rpc2"
+	"github.com/cenkalti/rpc2/jsonrpc"
 )
 
 // OvsdbClient is an OVSDB client
 type OvsdbClient struct {
-	rpcClient *rpc2.Client
-	Schema    map[string]DatabaseSchema
-	handlers  []NotificationHandler
+	rpcClient     *rpc2.Client
+	Schema        map[string]DatabaseSchema
+	handlers      []NotificationHandler
+	handlersMutex *sync.Mutex
 }
 
 func newOvsdbClient(c *rpc2.Client) *OvsdbClient {
-	ovs := &OvsdbClient{rpcClient: c, Schema: make(map[string]DatabaseSchema)}
+	ovs := &OvsdbClient{
+		rpcClient:     c,
+		Schema:        make(map[string]DatabaseSchema),
+		handlersMutex: &sync.Mutex{},
+	}
 	connectionsMutex.Lock()
 	defer connectionsMutex.Unlock()
 	if connections == nil {
@@ -41,18 +49,9 @@ const DefaultAddress = "127.0.0.1"
 // DefaultPort is the default port used for a connection
 const DefaultPort = 6640
 
-// Connect creates an OVSDB connection and returns and OvsdbClient
-func Connect(ipAddr string, port int) (*OvsdbClient, error) {
-	if ipAddr == "" {
-		ipAddr = DefaultAddress
-	}
-
-	if port <= 0 {
-		port = DefaultPort
-	}
-
-	target := fmt.Sprintf("%s:%d", ipAddr, port)
-	conn, err := net.Dial("tcp", target)
+// ConnectUsingProtocol creates an OVSDB connection and returns and OvsdbClient
+func ConnectUsingProtocol(protocol string, target string) (*OvsdbClient, error) {
+	conn, err := net.Dial(protocol, target)
 
 	if err != nil {
 		return nil, err
@@ -81,9 +80,57 @@ func Connect(ipAddr string, port int) (*OvsdbClient, error) {
 	return ovs, nil
 }
 
+// Connect creates an OVSDB connection and returns and OvsdbClient
+func Connect(ipAddr string, port int) (*OvsdbClient, error) {
+	if ipAddr == "" {
+		ipAddr = DefaultAddress
+	}
+
+	if port <= 0 {
+		port = DefaultPort
+	}
+
+	target := fmt.Sprintf("%s:%d", ipAddr, port)
+	return ConnectUsingProtocol("tcp", target)
+}
+
+// ConnectWithUnixSocket makes a OVSDB Connection via a Unix Socket
+func ConnectWithUnixSocket(socketFile string) (*OvsdbClient, error) {
+
+	if _, err := os.Stat(socketFile); os.IsNotExist(err) {
+		return nil, errors.New("Invalid socket file")
+	}
+
+	return ConnectUsingProtocol("unix", socketFile)
+}
+
 // Register registers the supplied NotificationHandler to recieve OVSDB Notifications
 func (ovs *OvsdbClient) Register(handler NotificationHandler) {
+	ovs.handlersMutex.Lock()
+	defer ovs.handlersMutex.Unlock()
 	ovs.handlers = append(ovs.handlers, handler)
+}
+
+//Get Handler by index
+func getHandlerIndex(handler NotificationHandler, handlers []NotificationHandler) (int, error) {
+	for i, h := range handlers {
+		if reflect.DeepEqual(h, handler) {
+			return i, nil
+		}
+	}
+	return -1, errors.New("Handler not found")
+}
+
+// Unregister the supplied NotificationHandler to not recieve OVSDB Notifications anymore
+func (ovs *OvsdbClient) Unregister(handler NotificationHandler) error {
+	ovs.handlersMutex.Lock()
+	defer ovs.handlersMutex.Unlock()
+	i, err := getHandlerIndex(handler, ovs.handlers)
+	if err != nil {
+		return err
+	}
+	ovs.handlers = append(ovs.handlers[:i], ovs.handlers[i+1:]...)
+	return nil
 }
 
 // NotificationHandler is the interface that must be implemented to receive notifcations
@@ -109,6 +156,8 @@ func echo(client *rpc2.Client, args []interface{}, reply *[]interface{}) error {
 	connectionsMutex.RLock()
 	defer connectionsMutex.RUnlock()
 	if _, ok := connections[client]; ok {
+		connections[client].handlersMutex.Lock()
+		defer connections[client].handlersMutex.Unlock()
 		for _, handler := range connections[client].handlers {
 			handler.Echo(nil)
 		}
@@ -144,6 +193,8 @@ func update(client *rpc2.Client, params []interface{}, reply *interface{}) error
 	connectionsMutex.RLock()
 	defer connectionsMutex.RUnlock()
 	if _, ok := connections[client]; ok {
+		connections[client].handlersMutex.Lock()
+		defer connections[client].handlersMutex.Unlock()
 		for _, handler := range connections[client].handlers {
 			handler.Update(params, tableUpdates)
 		}
