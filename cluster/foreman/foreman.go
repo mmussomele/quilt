@@ -70,9 +70,7 @@ func Init(conn db.Conn) {
 func RunOnce(conn db.Conn) {
 	var spec string
 	var machines []db.Machine
-	conn.Txn(db.ClusterTable,
-		db.MachineTable).Run(func(view db.Database) error {
-
+	conn.Txn(db.ClusterTable, db.MachineTable).Run(func(view db.Database) error {
 		machines = view.SelectFromMachine(func(m db.Machine) bool {
 			return m.PublicIP != "" && m.PrivateIP != "" && m.CloudID != ""
 		})
