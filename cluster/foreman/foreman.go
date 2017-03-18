@@ -12,6 +12,7 @@ import (
 	"github.com/quilt/quilt/cluster/machine"
 	"github.com/quilt/quilt/db"
 	"github.com/quilt/quilt/minion/pb"
+	"github.com/quilt/quilt/version"
 
 	log "github.com/Sirupsen/logrus"
 )
@@ -120,6 +121,7 @@ func RunOnce(conn db.Conn) {
 			Region:         m.machine.Region,
 			EtcdMembers:    etcdIPs,
 			AuthorizedKeys: m.machine.SSHKeys,
+			Version:        version.Version,
 		}
 
 		if reflect.DeepEqual(newConfig, m.config) {
@@ -191,7 +193,7 @@ func updateConfig(m *minion) {
 	var err error
 	m.config, err = m.client.getMinion()
 	if err != nil {
-		if m.connected {
+		if m.connected || version.IsVersionError(err) {
 			log.WithError(err).Error("Failed to get minion config")
 		} else {
 			log.WithError(err).Debug("Failed to get minion config")
@@ -219,7 +221,7 @@ var newClient = newClientImpl
 
 func (c clientImpl) getMinion() (pb.MinionConfig, error) {
 	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
-	cfg, err := c.GetMinionConfig(ctx, &pb.Request{})
+	cfg, err := c.GetMinionConfig(ctx, &pb.Request{Version: version.Version})
 	if err != nil {
 		return pb.MinionConfig{}, err
 	}

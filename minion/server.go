@@ -8,6 +8,7 @@ import (
 
 	"github.com/quilt/quilt/db"
 	"github.com/quilt/quilt/minion/pb"
+	"github.com/quilt/quilt/version"
 
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -40,9 +41,12 @@ func minionServerRun(conn db.Conn) {
 }
 
 func (s server) GetMinionConfig(cts context.Context,
-	_ *pb.Request) (*pb.MinionConfig, error) {
+	req *pb.Request) (*pb.MinionConfig, error) {
 
 	var cfg pb.MinionConfig
+	if !version.Compatible(req.Version) {
+		return &cfg, version.NewError(req.Version)
+	}
 
 	m := s.MinionSelf()
 	cfg.Role = db.RoleToPB(m.Role)
@@ -65,6 +69,11 @@ func (s server) GetMinionConfig(cts context.Context,
 
 func (s server) SetMinionConfig(ctx context.Context,
 	msg *pb.MinionConfig) (*pb.Reply, error) {
+
+	if !version.Compatible(msg.Version) {
+		return &pb.Reply{}, version.NewError(msg.Version)
+	}
+
 	go s.Txn(db.EtcdTable,
 		db.MinionTable).Run(func(view db.Database) error {
 
@@ -91,6 +100,5 @@ func (s server) SetMinionConfig(ctx context.Context,
 
 		return nil
 	})
-
 	return &pb.Reply{}, nil
 }

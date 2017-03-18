@@ -9,6 +9,7 @@ import (
 
 	"github.com/quilt/quilt/db"
 	"github.com/quilt/quilt/minion/pb"
+	"github.com/quilt/quilt/version"
 )
 
 func TestSetMinionConfig(t *testing.T) {
@@ -31,6 +32,7 @@ func TestSetMinionConfig(t *testing.T) {
 		Region:         "region",
 		EtcdMembers:    []string{"etcd1", "etcd2"},
 		AuthorizedKeys: []string{"key1", "key2"},
+		Version:        version.Version,
 	}
 	expMinion := db.Minion{
 		Self:           true,
@@ -134,7 +136,7 @@ func TestGetMinionConfig(t *testing.T) {
 		view.Commit(m)
 		return nil
 	})
-	cfg, err := s.GetMinionConfig(nil, &pb.Request{})
+	cfg, err := s.GetMinionConfig(nil, &pb.Request{Version: "master"})
 	assert.NoError(t, err)
 	assert.Equal(t, pb.MinionConfig{
 		Role:           pb.MinionConfig_MASTER,
@@ -153,7 +155,7 @@ func TestGetMinionConfig(t *testing.T) {
 		view.Commit(etcd)
 		return nil
 	})
-	cfg, err = s.GetMinionConfig(nil, &pb.Request{})
+	cfg, err = s.GetMinionConfig(nil, &pb.Request{Version: "master"})
 	assert.NoError(t, err)
 	assert.Equal(t, pb.MinionConfig{
 		Role:           pb.MinionConfig_MASTER,

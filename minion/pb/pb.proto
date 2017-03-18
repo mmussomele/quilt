@@ -20,12 +20,14 @@ message MinionConfig {
     string Size = 6;
     string Region = 7;
     string FloatingIP = 8;
-    repeated string EtcdMembers = 9;
-    repeated string AuthorizedKeys = 10;
+    string Version = 9;
+    repeated string EtcdMembers = 10;
+    repeated string AuthorizedKeys = 11;
 }
 
 message Reply {
 }
 
 message Request {
+    string Version = 1;
 }
