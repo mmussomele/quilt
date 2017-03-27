@@ -6,7 +6,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"time"
 )
 
 // The Database is the central storage location for all state in the system.  The policy
@@ -17,12 +16,6 @@ type Database struct {
 	idAlloc *idCounter
 }
 
-// A Trigger sends notifications when anything in their corresponding table changes.
-type Trigger struct {
-	C    chan struct{} // The channel on which notifications are delivered.
-	stop chan struct{}
-}
-
 type row interface {
 	less(row) bool
 	String() string
@@ -31,7 +24,8 @@ type row interface {
 
 // A Conn is a database handle on which Transactions may be created.
 type Conn struct {
-	db Database
+	db        Database
+	callbacks *callbackList
 }
 
 // A Transaction is a database handle on which transactions may be executed.
@@ -45,15 +39,22 @@ type idCounter struct {
 	curID int
 }
 
+// A callbackList is a wrapper around a list of callbacks providing concurrency safe use
+type callbackList struct {
+	sync.Mutex
+	list []*Callback
+}
+
 // New creates a connection to a brand new database.
 func New() Conn {
 	db := Database{make(map[TableType]*table), &idCounter{}}
 	for _, t := range AllTables {
-		db.tables[t] = newTable()
+		db.tables[t] = newTable(t)
 	}
 
-	cn := Conn{db: db}
+	cn := Conn{db: db, callbacks: &callbackList{}}
 	cn.runLogger()
+	go cn.runCallbackTimer()
 	return cn
 }
 
@@ -92,49 +93,6 @@ func (tr Transaction) Run(do func(db Database) error) error {
 	return err
 }
 
-// Trigger registers a new database trigger that watches changes to 'tableName'.  Any
-// change to the table, including row insertions, deletions, and modifications, will
-// cause a notification on 'Trigger.C'.
-func (cn Conn) Trigger(tt ...TableType) Trigger {
-	trigger := Trigger{C: make(chan struct{}, 1), stop: make(chan struct{})}
-	cn.Txn(tt...).Run(func(db Database) error {
-		for _, t := range tt {
-			dbTable := db.accessTable(t)
-			dbTable.triggers[trigger] = struct{}{}
-		}
-		return nil
-	})
-
-	return trigger
-}
-
-// TriggerTick creates a trigger, similar to Trigger(), that additionally ticks once
-// every N 'seconds'.  So that clients properly initialize, TriggerTick() sends an
-// initialization tick at startup.
-func (cn Conn) TriggerTick(seconds int, tt ...TableType) Trigger {
-	trigger := cn.Trigger(tt...)
-
-	go func() {
-		ticker := time.NewTicker(time.Duration(seconds) * time.Second)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case trigger.C <- struct{}{}:
-			default:
-			}
-
-			select {
-			case <-ticker.C:
-			case <-trigger.stop:
-				return
-			}
-		}
-	}()
-
-	return trigger
-}
-
 // Lock all tables needed by the Transaction to perform a transact. Locking tables in
 // sorted order avoids deadlock between two transactionss requesting intersecting sets of
 // tables.
@@ -156,11 +114,6 @@ func (tr Transaction) unlockTables() {
 	for _, t := range tr.db.tables {
 		t.Unlock()
 	}
-}
-
-// Stop a running trigger thus allowing resources to be deallocated.
-func (t Trigger) Stop() {
-	close(t.stop)
 }
 
 func (db Database) insert(r row) {

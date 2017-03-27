@@ -3,26 +3,13 @@ package etcd
 import (
 	"encoding/json"
 	"fmt"
-	"time"
 
 	"github.com/quilt/quilt/db"
 	"github.com/quilt/quilt/join"
 	"github.com/quilt/quilt/util"
-
-	log "github.com/Sirupsen/logrus"
 )
 
 const containerPath = "/containers"
-
-func runContainer(conn db.Conn, store Store) {
-	etcdWatch := store.Watch(containerPath, 1*time.Second)
-	trigg := conn.TriggerTick(60, db.ContainerTable)
-	for range joinNotifiers(trigg.C, etcdWatch) {
-		if err := runContainerOnce(conn, store); err != nil {
-			log.WithError(err).Warn("Failed to sync containers with Etcd.")
-		}
-	}
-}
 
 func runContainerOnce(conn db.Conn, store Store) error {
 	etcdStr, err := readEtcdNode(store, containerPath)

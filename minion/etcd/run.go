@@ -13,12 +13,37 @@ import (
 func Run(conn db.Conn) {
 	store := NewStore()
 	makeEtcdDir(minionPath, store, 0)
+	runElection(conn, store)
 
-	go runElection(conn, store)
-	go runConnection(conn, store)
-	go runContainer(conn, store)
-	go runHostname(conn, store)
-	runMinionSync(conn, store)
+	// Register the connection update callback.
+	connectionWatch := store.Watch(connectionPath, 1*time.Second)
+	conn.RegisterCallback(func() {
+		if err := runConnectionOnce(conn, store); err != nil {
+			log.WithError(err).Warn("Failed to sync connections with Etcd.")
+		}
+	}, "Etcd Connection", 60, db.ConnectionTable).RegisterTrigger(connectionWatch)
+
+	// Register the container update callback.
+	containerWatch := store.Watch(containerPath, 1*time.Second)
+	conn.RegisterCallback(func() {
+		if err := runContainerOnce(conn, store); err != nil {
+			log.WithError(err).Warn("Failed to sync containers with Etcd.")
+		}
+	}, "Etcd Container", 60, db.ContainerTable).RegisterTrigger(containerWatch)
+
+	// Register the hostname callback.
+	hostnameWatch := store.Watch(hostnamePath, 1*time.Second)
+	conn.RegisterCallback(func() {
+		if err := runHostnameOnce(conn, store); err != nil {
+			log.WithError(err).Warn("Failed to sync hostnames with Etcd")
+		}
+	}, "Etcd Hostname", 60, db.HostnameTable).RegisterTrigger(hostnameWatch)
+
+	// Register the minion sync callback.
+	conn.RegisterCallback(func() {
+		writeMinion(conn, store)
+		readMinion(conn, store)
+	}, "Etcd Minion", minionTimeout/2, db.MinionTable)
 }
 
 func makeEtcdDir(dir string, store Store, ttl time.Duration) {

@@ -14,19 +14,23 @@ const leaderKey = "/leader"
 
 // Run blocks implementing leader election.
 func runElection(conn db.Conn, store Store) {
-	go watchLeader(conn, store)
-	campaign(conn, store)
-}
+	watch := store.Watch(leaderKey, 1*time.Second)
+	conn.RegisterCallback(campaign(conn, store), "Campaign", electionTTL/2,
+		db.EtcdTable).RegisterTrigger(watch)
 
-func watchLeader(conn db.Conn, store Store) {
 	tickRate := electionTTL
 	if tickRate > 30 {
 		tickRate = 30
 	}
 
-	watch := store.Watch(leaderKey, 1*time.Second)
-	trigg := conn.TriggerTick(tickRate, db.EtcdTable)
-	for {
+	// These callbacks can run in any order, so watchLeader's is registered second so
+	// its initial run of its do() doesn't block campaign.
+	conn.RegisterCallback(watchLeader(conn, store), "Watch Leader", tickRate,
+		db.EtcdTable).RegisterTrigger(watch)
+}
+
+func watchLeader(conn db.Conn, store Store) func() {
+	do := func() {
 		leader, _ := store.Get(leaderKey)
 		conn.Txn(db.EtcdTable).Run(func(view db.Database) error {
 			etcdRows := view.SelectFromEtcd(nil)
@@ -36,36 +40,28 @@ func watchLeader(conn db.Conn, store Store) {
 			}
 			return nil
 		})
-
-		select {
-		case <-watch:
-		case <-trigg.C:
-		}
 	}
+
+	// do must be executed once before it should be triggered by a callback, so we
+	// call it before returning.
+	do()
+	return do
 }
 
-func campaign(conn db.Conn, store Store) {
-	watch := store.Watch(leaderKey, 1*time.Second)
-	trigg := conn.TriggerTick(electionTTL/2, db.EtcdTable)
-
-	for {
-		select {
-		case <-watch:
-		case <-trigg.C:
-		}
-
+func campaign(conn db.Conn, store Store) func() {
+	return func() {
 		etcdRows := conn.SelectFromEtcd(nil)
 
 		minion := conn.MinionSelf()
 		master := minion.Role == db.Master && len(etcdRows) == 1
 
 		if !master {
-			continue
+			return
 		}
 
 		IP := minion.PrivateIP
 		if IP == "" {
-			continue
+			return
 		}
 
 		ttl := electionTTL * time.Second

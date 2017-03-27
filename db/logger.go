@@ -9,12 +9,9 @@ import (
 
 func (conn Conn) runLogger() {
 	for _, t := range AllTables {
-		t := t
-		go func() {
-			for range conn.Trigger(t).C {
-				conn.logTable(t)
-			}
-		}()
+		conn.RegisterCallback(func() {
+			conn.logTable(t)
+		}, "", 0, t)
 	}
 }
 

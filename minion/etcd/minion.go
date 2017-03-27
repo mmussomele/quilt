@@ -7,7 +7,6 @@ import (
 
 	"github.com/quilt/quilt/db"
 	"github.com/quilt/quilt/join"
-	"github.com/quilt/quilt/util"
 
 	log "github.com/Sirupsen/logrus"
 )
@@ -16,16 +15,6 @@ const (
 	minionTimeout = 30
 	minionPath    = "/minions"
 )
-
-func runMinionSync(conn db.Conn, store Store) {
-	loopLog := util.NewEventTimer("Etcd")
-	for range conn.TriggerTick(minionTimeout/2, db.MinionTable).C {
-		loopLog.LogStart()
-		writeMinion(conn, store)
-		readMinion(conn, store)
-		loopLog.LogEnd()
-	}
-}
 
 func readMinion(conn db.Conn, store Store) {
 	tree, err := store.GetTree(minionPath)

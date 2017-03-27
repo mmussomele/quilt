@@ -15,7 +15,8 @@ import (
 
 func runWorker() {
 	setupWorker()
-	go runWorkerSystem()
+	conn.RegisterCallback(runWorkerOnce, "Supervisor", 0,
+		db.MinionTable, db.EtcdTable)
 }
 
 func setupWorker() {
@@ -39,15 +40,6 @@ func setupWorker() {
 		}
 		log.WithError(err).Error("Failed to configure quilt-int.")
 		time.Sleep(5 * time.Second)
-	}
-}
-
-func runWorkerSystem() {
-	loopLog := util.NewEventTimer("Supervisor")
-	for range conn.Trigger(db.MinionTable, db.EtcdTable).C {
-		loopLog.LogStart()
-		runWorkerOnce()
-		loopLog.LogEnd()
 	}
 }
 

@@ -12,7 +12,6 @@ import (
 	"github.com/quilt/quilt/db"
 	"github.com/quilt/quilt/minion/docker"
 	"github.com/quilt/quilt/minion/network/plugin"
-	"github.com/quilt/quilt/util"
 )
 
 // Run blocks implementing the scheduler module.
@@ -24,11 +23,7 @@ func Run(conn db.Conn, dk docker.Client) {
 		log.WithError(err).Fatal("Failed to configure network plugin")
 	}
 
-	loopLog := util.NewEventTimer("Scheduler")
-	trig := conn.TriggerTick(60, db.MinionTable, db.ContainerTable,
-		db.PlacementTable, db.EtcdTable).C
-	for range trig {
-		loopLog.LogStart()
+	conn.RegisterCallback(func() {
 		minion := conn.MinionSelf()
 
 		if minion.Role == db.Worker {
@@ -36,8 +31,8 @@ func Run(conn db.Conn, dk docker.Client) {
 		} else if minion.Role == db.Master {
 			runMaster(conn)
 		}
-		loopLog.LogEnd()
-	}
+	}, "Scheduler", 60, db.MinionTable, db.ContainerTable,
+		db.PlacementTable, db.EtcdTable)
 }
 
 func bootWait(conn db.Conn) {

@@ -26,20 +26,13 @@ type dnsTable struct {
 var table *dnsTable
 
 func runDNS(conn db.Conn) {
-	go syncHostnames(conn)
-	go serveDNS(conn)
-}
-
-func syncHostnames(conn db.Conn) {
-	for range conn.Trigger(db.LabelTable, db.ContainerTable, db.MinionTable).C {
+	conn.RegisterCallback(func() {
 		syncHostnamesOnce(conn)
-	}
-}
+	}, "DNS Sync Hostnames", 0, db.LabelTable, db.ContainerTable, db.MinionTable)
 
-func serveDNS(conn db.Conn) {
-	for range conn.Trigger(db.HostnameTable, db.MinionTable).C {
+	conn.RegisterCallback(func() {
 		serveDNSOnce(conn)
-	}
+	}, "DNS Serve", 0, db.HostnameTable, db.MinionTable)
 }
 
 func syncHostnamesOnce(conn db.Conn) {

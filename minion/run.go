@@ -4,6 +4,7 @@ package minion
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/quilt/quilt/api"
@@ -17,7 +18,6 @@ import (
 	"github.com/quilt/quilt/minion/registry"
 	"github.com/quilt/quilt/minion/scheduler"
 	"github.com/quilt/quilt/minion/supervisor"
-	"github.com/quilt/quilt/util"
 
 	log "github.com/Sirupsen/logrus"
 )
@@ -44,7 +44,6 @@ func Run(role db.Role) {
 
 	// Not in a goroutine, want the plugin to start before the scheduler
 	plugin.Run()
-
 	supervisor.Run(conn, dk, role)
 
 	go minionServerRun(conn)
@@ -54,12 +53,11 @@ func Run(role db.Role) {
 	go etcd.Run(conn)
 	go syncAuthorizedKeys(conn)
 
-	go apiServer.Run(conn, fmt.Sprintf("tcp://0.0.0.0:%d", api.DefaultRemotePort))
+	quit := make(chan int)
+	addr := fmt.Sprintf("tcp://0.0.0.0:%d", api.DefaultRemotePort)
+	go apiServer.Run(conn, addr, quit)
 
-	loopLog := util.NewEventTimer("Minion-Update")
-
-	for range conn.Trigger(db.MinionTable, db.EtcdTable).C {
-		loopLog.LogStart()
+	conn.RegisterCallback(func() {
 		txn := conn.Txn(db.ConnectionTable, db.ContainerTable, db.MinionTable,
 			db.EtcdTable, db.PlacementTable, db.ImageTable)
 		txn.Run(func(view db.Database) error {
@@ -69,8 +67,11 @@ func Run(role db.Role) {
 			}
 			return nil
 		})
-		loopLog.LogEnd()
-	}
+	}, "Minion-Update", 0, db.MinionTable, db.EtcdTable)
+
+	// Since callbacks run in their own goroutines, if we don't wait, main will end
+	// up exiting. Therefore we need to block until exit is desired.
+	os.Exit(<-quit)
 }
 
 func runProfiler(duration time.Duration) {

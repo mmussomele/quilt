@@ -402,101 +402,108 @@ func pickTwoTables(taken map[TableType]struct{}) []TableType {
 	return chosen
 }
 
-func TestTrigger(t *testing.T) {
+func TestCallback(t *testing.T) {
 	conn := New()
+	do1, called1 := callbackChecker()
+	do2, called2 := callbackChecker()
+	do3, called3 := callbackChecker()
+	do4, called4 := callbackChecker()
 
-	mt := conn.Trigger(MachineTable)
-	mt2 := conn.Trigger(MachineTable)
-	ct := conn.Trigger(ClusterTable)
-	ct2 := conn.Trigger(ClusterTable)
+	conn.RegisterCallback(do1, "", 0, MachineTable)
+	conn.RegisterCallback(do2, "", 0, MachineTable)
+	conn.RegisterCallback(do3, "", 0, ClusterTable)
+	conn.RegisterCallback(do4, "", 0, ClusterTable)
 
-	triggerNoRecv(t, mt)
-	triggerNoRecv(t, mt2)
-	triggerNoRecv(t, ct)
-	triggerNoRecv(t, ct2)
+	assert.False(t, called1())
+	assert.False(t, called2())
+	assert.False(t, called3())
+	assert.False(t, called4())
 
-	err := conn.Txn(AllTables...).Run(func(db Database) error {
+	err := conn.Txn(MachineTable).Run(func(db Database) error {
 		db.InsertMachine()
 		return nil
 	})
-	if err != nil {
-		t.Fail()
-		return
-	}
+	assert.NoError(t, err)
 
-	triggerRecv(t, mt)
-	triggerRecv(t, mt2)
-	triggerNoRecv(t, ct)
-	triggerNoRecv(t, ct2)
+	time.Sleep(25 * time.Millisecond)
+	assert.True(t, called1())
+	assert.True(t, called2())
+	assert.False(t, called3())
+	assert.False(t, called4())
 
-	mt2.Stop()
-	err = conn.Txn(AllTables...).Run(func(db Database) error {
-		db.InsertMachine()
+	err = conn.Txn(ClusterTable).Run(func(db Database) error {
+		db.InsertCluster()
 		return nil
 	})
-	if err != nil {
-		t.Fail()
-		return
-	}
-	triggerRecv(t, mt)
-	triggerNoRecv(t, mt2)
+	assert.NoError(t, err)
 
-	mt.Stop()
-	ct.Stop()
-	ct2.Stop()
+	time.Sleep(25 * time.Millisecond)
+	assert.False(t, called1())
+	assert.False(t, called2())
+	assert.True(t, called3())
+	assert.True(t, called4())
 
-	fast := conn.TriggerTick(1, MachineTable)
-	triggerRecv(t, fast)
-	triggerRecv(t, fast)
-	triggerRecv(t, fast)
+	err = conn.Txn(ClusterTable, MachineTable).Run(func(db Database) error {
+		for _, c := range db.SelectFromCluster(nil) {
+			db.Remove(c)
+		}
+		for _, m := range db.SelectFromMachine(nil) {
+			db.Remove(m)
+		}
+		return nil
+	})
+	assert.NoError(t, err)
+
+	time.Sleep(25 * time.Millisecond)
+	assert.True(t, called1())
+	assert.True(t, called2())
+	assert.True(t, called3())
+	assert.True(t, called4())
+
+	err = conn.Txn(EtcdTable).Run(func(db Database) error {
+		db.InsertEtcd()
+		return nil
+	})
+	assert.NoError(t, err)
+
+	time.Sleep(25 * time.Millisecond)
+	assert.False(t, called1())
+	assert.False(t, called2())
+	assert.False(t, called3())
+	assert.False(t, called4())
+
+	do5, called5 := callbackChecker()
+	conn.RegisterCallback(do5, "", 1, EtcdTable)
+	assert.False(t, called5())
+
+	time.Sleep(1100 * time.Millisecond)
+	assert.True(t, called5())
+	assert.False(t, called5())
+
+	err = conn.Txn(EtcdTable).Run(func(db Database) error {
+		db.InsertEtcd()
+		return nil
+	})
+	assert.NoError(t, err)
+	time.Sleep(25 * time.Millisecond)
+	assert.True(t, called5())
 }
 
-func TestTriggerTickStop(t *testing.T) {
-	conn := New()
-
-	mt := conn.TriggerTick(100, MachineTable)
-
-	// The initial tick.
-	triggerRecv(t, mt)
-
-	triggerNoRecv(t, mt)
-	err := conn.Txn(AllTables...).Run(func(db Database) error {
-		db.InsertMachine()
-		return nil
-	})
-	if err != nil {
-		t.Fail()
-		return
+func callbackChecker() (func(), func() bool) {
+	cur := 0
+	last := 0
+	callback := func() {
+		cur++
+	}
+	check := func() bool {
+		called := last != cur
+		if called {
+			last++
+		}
+		return called
 	}
 
-	triggerRecv(t, mt)
-
-	mt.Stop()
-	err = conn.Txn(AllTables...).Run(func(db Database) error {
-		db.InsertMachine()
-		return nil
-	})
-	if err != nil {
-		t.Fail()
-		return
-	}
-	triggerNoRecv(t, mt)
-}
-
-func triggerRecv(t *testing.T, trig Trigger) {
-	select {
-	case <-trig.C:
-	case <-time.Tick(5 * time.Second):
-		t.Error("Expected Receive")
-	}
-}
-
-func triggerNoRecv(t *testing.T, trig Trigger) {
-	select {
-	case <-trig.C:
-		t.Error("Unexpected Receive")
-	case <-time.Tick(25 * time.Millisecond):
-	}
+	return callback, check
 }
 
 func SelectMachineCheck(db Database, do func(Machine) bool, expected []Machine) error {

@@ -59,13 +59,13 @@ const (
 // needed.
 func Run(conn db.Conn) {
 	var clst *cluster
-	for range conn.TriggerTick(30, db.ClusterTable, db.MachineTable, db.ACLTable).C {
+	conn.RegisterCallback(func() {
 		clst = updateCluster(conn, clst)
 
 		// Somewhat of a crude rate-limit of once every five seconds to avoid
 		// stressing out the cloud providers with too many API calls.
 		sleep(5 * time.Second)
-	}
+	}, "Update Cluster", 30, db.ClusterTable, db.MachineTable, db.ACLTable)
 }
 
 func updateCluster(conn db.Conn, clst *cluster) *cluster {

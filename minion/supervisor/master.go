@@ -10,16 +10,8 @@ import (
 func runMaster() {
 	run(Ovsdb, "ovsdb-server")
 	run(Registry)
-	go runMasterSystem()
-}
-
-func runMasterSystem() {
-	loopLog := util.NewEventTimer("Supervisor")
-	for range conn.Trigger(db.MinionTable, db.EtcdTable).C {
-		loopLog.LogStart()
-		runMasterOnce()
-		loopLog.LogEnd()
-	}
+	conn.RegisterCallback(runMasterOnce, "Supervisor", 0,
+		db.MinionTable, db.EtcdTable)
 }
 
 func runMasterOnce() {

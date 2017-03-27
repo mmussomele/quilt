@@ -3,25 +3,12 @@ package etcd
 import (
 	"encoding/json"
 	"fmt"
-	"time"
 
 	"github.com/quilt/quilt/db"
 	"github.com/quilt/quilt/join"
-
-	log "github.com/Sirupsen/logrus"
 )
 
 const connectionPath = "/connections"
-
-func runConnection(conn db.Conn, store Store) {
-	etcdWatch := store.Watch(connectionPath, 1*time.Second)
-	trigg := conn.TriggerTick(60, db.ConnectionTable)
-	for range joinNotifiers(trigg.C, etcdWatch) {
-		if err := runConnectionOnce(conn, store); err != nil {
-			log.WithError(err).Warn("Failed to sync connections with Etcd.")
-		}
-	}
-}
 
 func runConnectionOnce(conn db.Conn, store Store) error {
 	etcdStr, err := readEtcdNode(store, connectionPath)

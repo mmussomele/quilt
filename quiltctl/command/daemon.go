@@ -46,8 +46,10 @@ func (dCmd *Daemon) Parse(args []string) error {
 func (dCmd *Daemon) Run() int {
 	log.WithField("version", version.Version).Info("Starting Quilt daemon")
 	conn := db.New()
-	go engine.Run(conn)
-	go server.Run(conn, dCmd.common.host)
+	engine.Run(conn)
 	cluster.Run(conn)
-	return 0
+
+	quit := make(chan int)
+	go server.Run(conn, dCmd.common.host, quit)
+	return <-quit
 }

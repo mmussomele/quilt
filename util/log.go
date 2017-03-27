@@ -27,34 +27,3 @@ func (f Formatter) Format(entry *log.Entry) ([]byte, error) {
 	b.WriteByte('\n')
 	return b.Bytes(), nil
 }
-
-// EventTimer is a utility struct that allows us to time how long loops take, as
-// well as how often they are triggered.
-type EventTimer struct {
-	eventName string
-	lastStart time.Time
-	lastEnd   time.Time
-}
-
-// NewEventTimer creates and returns a ready to use EventTimer
-func NewEventTimer(eventName string) *EventTimer {
-	return &EventTimer{
-		eventName: eventName,
-		lastEnd:   time.Now(),
-		lastStart: time.Time{},
-	}
-}
-
-// LogStart logs the start of a loop and how long it has been since the last trigger.
-func (ltl *EventTimer) LogStart() {
-	ltl.lastStart = time.Now()
-	log.Debugf("Starting %s event. It has been %v since the last run.",
-		ltl.eventName, ltl.lastStart.Sub(ltl.lastEnd))
-}
-
-// LogEnd logs the end of a loop and how long it took to run.
-func (ltl *EventTimer) LogEnd() {
-	ltl.lastEnd = time.Now()
-	log.Debugf("%s event ended. It took %v", ltl.eventName,
-		ltl.lastEnd.Sub(ltl.lastStart))
-}

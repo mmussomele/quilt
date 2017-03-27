@@ -27,7 +27,7 @@ type server struct {
 }
 
 // Run accepts incoming `quiltctl` connections and responds to them.
-func Run(conn db.Conn, listenAddr string) error {
+func Run(conn db.Conn, listenAddr string, quit chan int) error {
 	proto, addr, err := api.ParseListenAddress(listenAddr)
 	if err != nil {
 		return err
@@ -53,13 +53,13 @@ func Run(conn db.Conn, listenAddr string) error {
 		sig := <-c
 		log.Printf("Caught signal %s: shutting down.\n", sig)
 		sock.Close()
-		os.Exit(0)
+		close(quit)
 	}(sigc)
 
 	s := grpc.NewServer()
 	pb.RegisterAPIServer(s, apiServer)
 	s.Serve(sock)
-
+	close(quit)
 	return nil
 }
 

@@ -30,9 +30,9 @@ restart containers running the custom image.
 func Run(conn db.Conn, dk docker.Client) {
 	bootWait()
 
-	for range conn.TriggerTick(30, db.ImageTable).C {
+	conn.RegisterCallback(func() {
 		runOnce(conn, dk)
-	}
+	}, "Registry", 30, db.ImageTable)
 }
 
 func runOnce(conn db.Conn, dk docker.Client) {

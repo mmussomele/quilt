@@ -3,25 +3,12 @@ package etcd
 import (
 	"encoding/json"
 	"fmt"
-	"time"
 
 	"github.com/quilt/quilt/db"
 	"github.com/quilt/quilt/join"
-
-	log "github.com/Sirupsen/logrus"
 )
 
 const hostnamePath = "/hostnames"
-
-func runHostname(conn db.Conn, store Store) {
-	etcdWatch := store.Watch(hostnamePath, 1*time.Second)
-	trigg := conn.TriggerTick(60, db.HostnameTable)
-	for range joinNotifiers(trigg.C, etcdWatch) {
-		if err := runHostnameOnce(conn, store); err != nil {
-			log.WithError(err).Warn("Failed to sync hostnames with Etcd")
-		}
-	}
-}
 
 func runHostnameOnce(conn db.Conn, store Store) error {
 	etcdStr, err := readEtcdNode(store, hostnamePath)

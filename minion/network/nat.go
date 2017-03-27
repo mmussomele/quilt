@@ -23,11 +23,10 @@ type IPTables interface {
 }
 
 func runNat(conn db.Conn) {
-	tables := []db.TableType{db.ContainerTable, db.ConnectionTable, db.MinionTable}
-	for range conn.TriggerTick(30, tables...).C {
+	conn.RegisterCallback(func() {
 		minion := conn.MinionSelf()
 		if minion.Role != db.Worker {
-			continue
+			return
 		}
 
 		connections := conn.SelectFromConnection(nil)
@@ -38,13 +37,13 @@ func runNat(conn db.Conn) {
 		ipt, err := iptables.New()
 		if err != nil {
 			log.WithError(err).Error("Failed to get iptables handle")
-			continue
+			return
 		}
 
 		if err := updateNAT(ipt, containers, connections); err != nil {
 			log.WithError(err).Error("Failed to update NAT rules")
 		}
-	}
+	}, "Update NAT", 30, db.ContainerTable, db.ConnectionTable, db.MinionTable)
 }
 
 // updateNAT sets up iptables rules of three categories:

@@ -15,10 +15,9 @@ var defaultDiskSize = 32
 
 // Run updates the database in response to stitch changes in the cluster table.
 func Run(conn db.Conn) {
-	for range conn.TriggerTick(30, db.ClusterTable, db.MachineTable, db.ACLTable).C {
-		conn.Txn(db.ACLTable, db.ClusterTable,
-			db.MachineTable).Run(updateTxn)
-	}
+	conn.RegisterCallback(func() {
+		conn.Txn(db.ACLTable, db.ClusterTable, db.MachineTable).Run(updateTxn)
+	}, "Update Engine", 30, db.ClusterTable, db.MachineTable, db.ACLTable)
 }
 
 func updateTxn(view db.Database) error {

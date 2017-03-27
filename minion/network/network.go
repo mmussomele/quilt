@@ -19,16 +19,16 @@ const lSwitch = "quilt"
 
 // Run blocks implementing the network services.
 func Run(conn db.Conn) {
-	go runNat(conn)
-	go runDNS(conn)
-	go runUpdateIPs(conn)
+	runNat(conn)
+	runDNS(conn)
+	runUpdateIPs(conn)
 
-	for range conn.TriggerTick(30, db.MinionTable, db.ContainerTable,
-		db.ConnectionTable, db.LabelTable, db.EtcdTable).C {
+	conn.RegisterCallback(func() {
 		if conn.EtcdLeader() {
 			runMaster(conn)
 		}
-	}
+	}, "Network Master", 30, db.MinionTable, db.ContainerTable,
+		db.ConnectionTable, db.LabelTable, db.EtcdTable)
 }
 
 // The leader of the cluster is responsible for properly configuring OVN northd for

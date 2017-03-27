@@ -13,14 +13,17 @@ type testCtx struct {
 	execs [][]string
 
 	conn  db.Conn
-	trigg db.Trigger
+	trigg chan struct{}
 }
 
 func initTest(r db.Role) *testCtx {
 	conn = db.New()
 	md, _dk := docker.NewMock()
-	ctx := testCtx{fakeDocker{_dk, md}, nil, conn,
-		conn.Trigger(db.MinionTable, db.EtcdTable)}
+	ctx := testCtx{fakeDocker{_dk, md}, nil, conn, make(chan struct{})}
+	conn.RegisterCallback(func() {
+		ctx.trigg <- struct{}{}
+	}, "", 0, db.MinionTable, db.EtcdTable)
+
 	role = r
 	dk = ctx.fd.Client
 
@@ -49,7 +52,7 @@ func initTest(r db.Role) *testCtx {
 func (ctx *testCtx) run() {
 	ctx.execs = nil
 	select {
-	case <-ctx.trigg.C:
+	case <-ctx.trigg:
 	}
 
 	switch role {

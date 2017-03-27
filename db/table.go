@@ -1,6 +1,7 @@
 package db
 
 import (
+	"fmt"
 	"reflect"
 	"sync"
 )
@@ -49,32 +50,29 @@ var AllTables = []TableType{ClusterTable, MachineTable, ContainerTable, MinionTa
 	HostnameTable}
 
 type table struct {
+	name TableType
 	rows map[int]row
 
-	triggers    map[Trigger]struct{}
+	callbacks   []*Callback
 	shouldAlert bool
 	sync.Mutex
 }
 
-func newTable() *table {
+func newTable(t TableType) *table {
 	return &table{
+		name:        t,
 		rows:        make(map[int]row),
-		triggers:    make(map[Trigger]struct{}),
+		callbacks:   []*Callback{},
 		shouldAlert: false,
 	}
 }
 
+// alert will call of the Callbacks for the table. The caller must have a lock on the
+// table before calling alert.
 func (t *table) alert() {
-	for trigger := range t.triggers {
+	for _, c := range t.callbacks {
 		select {
-		case <-trigger.stop:
-			delete(t.triggers, trigger)
-			continue
-		default:
-		}
-
-		select {
-		case trigger.C <- struct{}{}:
+		case c.causes <- fmt.Sprintf(changeAction, t.name):
 		default:
 		}
 	}

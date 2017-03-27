@@ -15,9 +15,9 @@ import (
 )
 
 func runUpdateIPs(conn db.Conn) {
-	for range conn.Trigger(db.ContainerTable, db.LabelTable, db.EtcdTable).C {
+	conn.RegisterCallback(func() {
 		if !conn.EtcdLeader() {
-			continue
+			return
 		}
 
 		txn := conn.Txn(db.ContainerTable, db.LabelTable)
@@ -32,7 +32,7 @@ func runUpdateIPs(conn db.Conn) {
 		if err != nil {
 			log.WithError(err).Warn("Failed to allocate IP addresses")
 		}
-	}
+	}, "Update IPs", 0, db.ContainerTable, db.LabelTable, db.EtcdTable)
 }
 
 func allocateContainerIPs(view db.Database) error {

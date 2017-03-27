@@ -22,11 +22,11 @@ func syncAuthorizedKeys(conn db.Conn) {
 	// install.
 	waitForConfig(conn)
 
-	for range conn.TriggerTick(30, db.MinionTable).C {
+	conn.RegisterCallback(func() {
 		if err := runOnce(conn); err != nil {
 			log.WithError(err).Error("Failed to sync keys")
 		}
-	}
+	}, "Sync Auth Keys", 30, db.MinionTable)
 }
 
 func runOnce(conn db.Conn) error {
