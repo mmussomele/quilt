@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	quiltImage = "quilt/quilt:latest"
+	quiltImage = "mmussomele/quilt:latest"
 )
 
 // Ubuntu generates a cloud config file for the Ubuntu operating system with the

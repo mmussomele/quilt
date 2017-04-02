@@ -62,7 +62,7 @@ initialize_minion() {
 	-v /etc/ssl/certs/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt \
 	-v /home/quilt/.ssh:/home/quilt/.ssh:rw \
 	-v /run/docker:/run/docker:rw {{.QuiltImage}} \
-	quilt minion -role={{.Role}}
+	quilt -l=debug minion -role={{.Role}}
 	Restart=on-failure
 
 	[Install]

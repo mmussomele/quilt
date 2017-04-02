@@ -81,12 +81,14 @@ func Run(_conn db.Conn, _dk docker.Client, _role db.Role) {
 
 // run calls out to the Docker client to run the container specified by name.
 func run(name string, args ...string) {
+	log.Debugf("Entering run for container: %s", name)
 	isRunning, err := dk.IsRunning(name)
 	if err != nil {
 		log.WithError(err).Warnf("could not check running status of %s.", name)
 		return
 	}
 	if isRunning {
+		log.Debugf("Container %s is already running.", name)
 		return
 	}
 

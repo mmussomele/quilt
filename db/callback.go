@@ -46,12 +46,13 @@ func (conn Conn) RegisterCallback(do func(), name string, seconds int,
 		conn.callbacks.Unlock()
 	}
 
-	for _, t := range tt {
-		tbl := conn.db.accessTable(t)
-		tbl.Lock()
-		tbl.callbacks = append(tbl.callbacks, c)
-		tbl.Unlock()
-	}
+	conn.Txn(tt...).Run(func(view Database) error {
+		for _, t := range tt {
+			tbl := conn.db.accessTable(t)
+			tbl.callbacks = append(tbl.callbacks, c)
+		}
+		return nil
+	})
 
 	go c.listen()
 	return c
