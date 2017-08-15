@@ -317,21 +317,123 @@ func TestStop(t *testing.T) {
 }
 
 func TestSetACLs(t *testing.T) {
+	mc := new(mocks.Client)
 	doPrvdr, err := newDigitalOcean(testNamespace, DefaultRegion)
 	assert.Nil(t, err)
-	err = doPrvdr.SetACLs([]acl.ACL{
+	doPrvdr.Client = mc
+
+	acls := []acl.ACL{
 		{
-			CidrIP:  "digital",
+			CidrIP:  "10.0.0.0/24",
 			MinPort: 1,
 			MaxPort: 65535,
 		},
 		{
-			CidrIP:  "ocean",
+			CidrIP:  "11.0.0.0/27",
 			MinPort: 22,
 			MaxPort: 22,
 		},
-	})
+	}
+
+	// Test that creating new ACLs works as expected.
+	mc.On("CreateFirewall", testNamespace, allowAll).Return(
+		&godo.Firewall{ID: "test", OutboundRules: allowAll}, nil, nil).Once()
+	mc.On("ListFirewalls").Return(
+		[]godo.Firewall{
+			{Name: testNamespace, ID: "test", OutboundRules: allowAll},
+		}, nil, nil).Once()
+	mc.On("AddRules", "test",
+		mock.AnythingOfType("[]godo.InboundRule")).Return(nil, nil).Once()
+
+	mc.On("RemoveRules", "test", []godo.InboundRule(nil)).Return(nil, nil).Once()
+
+	err = doPrvdr.SetACLs(acls)
 	assert.NoError(t, err)
+
+	mc = new(mocks.Client)
+	doPrvdr.Client = mc
+
+	// Check that ACLs are both created and removed when not in the requested list.
+	mc.On("ListFirewalls").Return([]godo.Firewall{
+		{
+			Name:          testNamespace,
+			ID:            "test",
+			OutboundRules: allowAll,
+			InboundRules: []godo.InboundRule{
+				{
+					Protocol:  "tcp",
+					PortRange: "22-22",
+					Sources: &godo.Sources{
+						Addresses: []string{"11.0.0.0/27"},
+					},
+				},
+				{
+					Protocol:  "udp",
+					PortRange: "22-22",
+					Sources: &godo.Sources{
+						Addresses: []string{"11.0.0.0/27"},
+					},
+				},
+				{
+					Protocol:  "icmp",
+					PortRange: "22-22",
+					Sources: &godo.Sources{
+						Addresses: []string{"11.0.0.0/27"},
+					},
+				},
+				{
+					Protocol:  "tcp",
+					PortRange: "100-200",
+					Sources: &godo.Sources{
+						Addresses: []string{"12.0.0.0/29"},
+					},
+				},
+				{
+					Protocol:  "udp",
+					PortRange: "100-200",
+					Sources: &godo.Sources{
+						Addresses: []string{"12.0.0.0/29"},
+					},
+				},
+				{
+					Protocol:  "icmp",
+					PortRange: "100-200",
+					Sources: &godo.Sources{
+						Addresses: []string{"12.0.0.0/29"},
+					},
+				},
+			},
+		},
+	}, nil, nil).Once()
+
+	mc.On("AddRules", "test", toRules([]acl.ACL{acls[0]})).Return(nil, nil).Once()
+	mc.On("RemoveRules", "test", toRules([]acl.ACL{
+		{
+			CidrIP:  "12.0.0.0/29",
+			MinPort: 100,
+			MaxPort: 200,
+		},
+	})).Return(nil, nil).Once()
+
+	err = doPrvdr.SetACLs(acls)
+	assert.NoError(t, err)
+
+	mc = new(mocks.Client)
+	doPrvdr.Client = mc
+
+	// Check that SetACLs fails on error.
+	mc.On("CreateFirewall", testNamespace, allowAll).Return(
+		&godo.Firewall{ID: "test", OutboundRules: allowAll}, nil, nil).Once()
+	mc.On("ListFirewalls").Return(
+		[]godo.Firewall{
+			{Name: testNamespace, ID: "test", OutboundRules: allowAll},
+		}, nil, nil).Once()
+	mc.On("AddRules", "test",
+		mock.AnythingOfType("[]godo.InboundRule")).Return(nil, nil).Once()
+	mc.On("RemoveRules", "test", []godo.InboundRule(nil)).Return(nil, errMock).Once()
+
+	err = doPrvdr.SetACLs(acls)
+	assert.Error(t, err)
 }
 
 func TestUpdateFloatingIPs(t *testing.T) {

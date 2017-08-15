@@ -34,6 +34,39 @@ var c = counter.New("Digital Ocean")
 
 var apiKeyPath = ".digitalocean/key"
 
+var (
+	// When creating firewall rules, the API requires that each rule have a protocol
+	// associated with it. It accepts the ones listed below, and we want to allow
+	// traffic only based on IP and port, so allow them all.
+	//
+	// https://developers.digitalocean.com/documentation/v2/#add-rules-to-a-firewall
+	protocols = []string{"tcp", "udp", "icmp"}
+
+	allIPs = &godo.Destinations{
+		Addresses: []string{"0.0.0.0/0", "::/0"},
+	}
+
+	// DigitalOcean firewalls block all traffic that is not explicitly allowed. We
+	// want to allow all outgoing traffic.
+	allowAll = []godo.OutboundRule{
+		{
+			Protocol:     "tcp",
+			PortRange:    "all",
+			Destinations: allIPs,
+		},
+		{
+			Protocol:     "udp",
+			PortRange:    "all",
+			Destinations: allIPs,
+		},
+		{
+			Protocol:     "icmp",
+			PortRange:    "all",
+			Destinations: allIPs,
+		},
+	}
+)
+
 // 16.04.1 x64 created at 2017-02-03.
 var imageID = 22601368
 
@@ -175,6 +208,7 @@ func (prvdr Provider) createAndAttach(m db.Machine) error {
 		Image:             godo.DropletCreateImage{ID: imageID},
 		PrivateNetworking: true,
 		UserData:          cloudConfig,
+		Tags:              []string{prvdr.namespace},
 	}
 
 	d, _, err := prvdr.CreateDroplet(createReq)
@@ -284,8 +318,102 @@ func (prvdr Provider) deleteAndWait(ids string) error {
 	return wait.Wait(pred)
 }
 
-// SetACLs is not supported in DigitalOcean.
+// SetACLs adds and removes acls in `prvdr` so that it conforms to `acls`.
 func (prvdr Provider) SetACLs(acls []acl.ACL) error {
-	log.Debug("DigitalOcean does not support ACLs")
+	firewall, err := prvdr.getCreateFirewall()
+	if err != nil {
+		return err
+	}
+
+	add, remove := syncACLs(acls, firewall.InboundRules)
+	if _, err := prvdr.AddRules(firewall.ID, add); err != nil {
+		return err
+	}
+	if _, err := prvdr.RemoveRules(firewall.ID, remove); err != nil {
+		return err
+	}
 	return nil
+}
+
+func (prvdr Provider) getCreateFirewall() (*godo.Firewall, error) {
+	firewalls, _, err := prvdr.ListFirewalls()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, firewall := range firewalls {
+		if firewall.Name == prvdr.namespace {
+			return &firewall, nil
+		}
+	}
+
+	firewall, _, err := prvdr.CreateFirewall(prvdr.namespace, allowAll)
+	return firewall, err
+}
+
+func syncACLs(desired []acl.ACL, current []godo.InboundRule) (
+	addRules, removeRules []godo.InboundRule) {
+
+	curACLSet := map[acl.ACL]struct{}{}
+	for _, cur := range current {
+		ports := strings.Split(cur.PortRange, "-")
+		if len(ports) != 2 {
+			log.Warnf("Invalid PortRange: %s", cur.PortRange)
+			continue
+		}
+
+		from, err := strconv.Atoi(ports[0])
+		if err != nil {
+			log.WithError(err).Warn(
+				"Failed to parse from port of InboundRule")
+			continue
+		}
+
+		to, err := strconv.Atoi(ports[1])
+		if err != nil {
+			log.WithError(err).Warn("Failed to parse to port of InboundRule")
+			continue
+		}
+
+		for _, addr := range cur.Sources.Addresses {
+			key := acl.ACL{
+				CidrIP:  addr,
+				MinPort: int(from),
+				MaxPort: int(to),
+			}
+			curACLSet[key] = struct{}{}
+		}
+	}
+
+	var curACLs acl.Slice
+	for key := range curACLSet {
+		curACLs = append(curACLs, key)
+	}
+
+	_, toAdd, toRemove := join.HashJoin(acl.Slice(desired), curACLs, nil, nil)
+
+	var add, remove []acl.ACL
+	for _, intf := range toAdd {
+		add = append(add, intf.(acl.ACL))
+	}
+	for _, intf := range toRemove {
+		remove = append(remove, intf.(acl.ACL))
+	}
+	return toRules(add), toRules(remove)
+}
+
+func toRules(acls []acl.ACL) (rules []godo.InboundRule) {
+	for _, acl := range acls {
+		for _, proto := range protocols {
+			rules = append(rules, godo.InboundRule{
+				Protocol:  proto,
+				PortRange: fmt.Sprintf("%d-%d", acl.MinPort, acl.MaxPort),
+				Sources: &godo.Sources{
+					Addresses: []string{acl.CidrIP},
+				},
+			})
+		}
+	}
+
+	return rules
 }
