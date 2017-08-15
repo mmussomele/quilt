@@ -42,4 +42,20 @@ func TestError(t *testing.T) {
 	_, _, err = c.UnassignFloatingIP("a")
 	assert.EqualError(t, err,
 		"Post https://api.digitalocean.com/v2/floating_ips/a/actions: test")
+
+	_, _, err = c.CreateFirewall("a", nil)
+	assert.EqualError(t, err,
+		"Post https://api.digitalocean.com/v2/firewalls: test")
+
+	_, _, err = c.ListFirewalls()
+	assert.EqualError(t, err,
+		"Get https://api.digitalocean.com/v2/firewalls: test")
+
+	_, err = c.AddRules("a", nil)
+	assert.EqualError(t, err,
+		"Post https://api.digitalocean.com/v2/firewalls/a/rules: test")
+
+	_, err = c.RemoveRules("a", nil)
+	assert.EqualError(t, err,
+		"Delete https://api.digitalocean.com/v2/firewalls/a/rules: test")
 }

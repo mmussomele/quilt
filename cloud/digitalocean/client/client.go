@@ -20,12 +20,19 @@ type Client interface {
 	ListFloatingIPs(*godo.ListOptions) ([]godo.FloatingIP, *godo.Response, error)
 	AssignFloatingIP(string, int) (*godo.Action, *godo.Response, error)
 	UnassignFloatingIP(string) (*godo.Action, *godo.Response, error)
+
+	CreateFirewall(string, []godo.OutboundRule) (*godo.Firewall,
+		*godo.Response, error)
+	ListFirewalls() ([]godo.Firewall, *godo.Response, error)
+	AddRules(string, []godo.InboundRule) (*godo.Response, error)
+	RemoveRules(string, []godo.InboundRule) (*godo.Response, error)
 }
 
 type client struct {
 	droplets          godo.DropletsService
 	floatingIPs       godo.FloatingIPsService
 	floatingIPActions godo.FloatingIPActionsService
+	acls              godo.FirewallsService
 }
 
 var c = counter.New("Digital Ocean")
@@ -70,6 +77,43 @@ func (client client) UnassignFloatingIP(ip string) (*godo.Action, *godo.Response
 	return client.floatingIPActions.Unassign(context.Background(), ip)
 }
 
+func (client client) AddRules(id string, rules []godo.InboundRule) (*godo.Response,
+	error) {
+
+	c.Inc("Add Rules")
+	return client.acls.AddRules(context.Background(), id, &godo.FirewallRulesRequest{
+		InboundRules: rules,
+	})
+}
+
+func (client client) RemoveRules(id string, rules []godo.InboundRule) (*godo.Response,
+	error) {
+
+	c.Inc("Remove Rules")
+	return client.acls.RemoveRules(context.Background(), id,
+		&godo.FirewallRulesRequest{
+			InboundRules: rules,
+		},
+	)
+}
+
+func (client client) CreateFirewall(tag string, outbound []godo.OutboundRule) (
+	*godo.Firewall, *godo.Response, error) {
+
+	c.Inc("Create Firewall")
+	req := &godo.FirewallRequest{
+		Name:          tag,
+		OutboundRules: outbound,
+		Tags:          []string{tag},
+	}
+	return client.acls.Create(context.Background(), req)
+}
+
+func (client client) ListFirewalls() ([]godo.Firewall, *godo.Response, error) {
+	c.Inc("List Firewalls")
+	return client.acls.List(context.Background(), nil)
+}
+
 // New creates a new DigitalOcean client.
 func New(oauthClient *http.Client) Client {
 	api := godo.NewClient(oauthClient)
@@ -77,5 +121,6 @@ func New(oauthClient *http.Client) Client {
 		droplets:          api.Droplets,
 		floatingIPs:       api.FloatingIPs,
 		floatingIPActions: api.FloatingIPActions,
+		acls:              api.Firewalls,
 	}
 }

@@ -10,6 +10,29 @@ type Client struct {
 	mock.Mock
 }
 
+// AddRules provides a mock function with given fields: _a0, _a1
+func (_m *Client) AddRules(_a0 string, _a1 []godo.InboundRule) (*godo.Response, error) {
+	ret := _m.Called(_a0, _a1)
+
+	var r0 *godo.Response
+	if rf, ok := ret.Get(0).(func(string, []godo.InboundRule) *godo.Response); ok {
+		r0 = rf(_a0, _a1)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*godo.Response)
+		}
+	}
+
+	var r1 error
+	if rf, ok := ret.Get(1).(func(string, []godo.InboundRule) error); ok {
+		r1 = rf(_a0, _a1)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
 // AssignFloatingIP provides a mock function with given fields: _a0, _a1
 func (_m *Client) AssignFloatingIP(_a0 string, _a1 int) (*godo.Action, *godo.Response, error) {
 	ret := _m.Called(_a0, _a1)
@@ -67,6 +90,38 @@ func (_m *Client) CreateDroplet(_a0 *godo.DropletCreateRequest) (*godo.Droplet, 
 	var r2 error
 	if rf, ok := ret.Get(2).(func(*godo.DropletCreateRequest) error); ok {
 		r2 = rf(_a0)
+	} else {
+		r2 = ret.Error(2)
+	}
+
+	return r0, r1, r2
+}
+
+// CreateFirewall provides a mock function with given fields: _a0, _a1
+func (_m *Client) CreateFirewall(_a0 string, _a1 []godo.OutboundRule) (*godo.Firewall, *godo.Response, error) {
+	ret := _m.Called(_a0, _a1)
+
+	var r0 *godo.Firewall
+	if rf, ok := ret.Get(0).(func(string, []godo.OutboundRule) *godo.Firewall); ok {
+		r0 = rf(_a0, _a1)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*godo.Firewall)
+		}
+	}
+
+	var r1 *godo.Response
+	if rf, ok := ret.Get(1).(func(string, []godo.OutboundRule) *godo.Response); ok {
+		r1 = rf(_a0, _a1)
+	} else {
+		if ret.Get(1) != nil {
+			r1 = ret.Get(1).(*godo.Response)
+		}
+	}
+
+	var r2 error
+	if rf, ok := ret.Get(2).(func(string, []godo.OutboundRule) error); ok {
+		r2 = rf(_a0, _a1)
 	} else {
 		r2 = ret.Error(2)
 	}
@@ -161,6 +216,38 @@ func (_m *Client) ListDroplets(_a0 *godo.ListOptions) ([]godo.Droplet, *godo.Res
 	return r0, r1, r2
 }
 
+// ListFirewalls provides a mock function with given fields:
+func (_m *Client) ListFirewalls() ([]godo.Firewall, *godo.Response, error) {
+	ret := _m.Called()
+
+	var r0 []godo.Firewall
+	if rf, ok := ret.Get(0).(func() []godo.Firewall); ok {
+		r0 = rf()
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]godo.Firewall)
+		}
+	}
+
+	var r1 *godo.Response
+	if rf, ok := ret.Get(1).(func() *godo.Response); ok {
+		r1 = rf()
+	} else {
+		if ret.Get(1) != nil {
+			r1 = ret.Get(1).(*godo.Response)
+		}
+	}
+
+	var r2 error
+	if rf, ok := ret.Get(2).(func() error); ok {
+		r2 = rf()
+	} else {
+		r2 = ret.Error(2)
+	}
+
+	return r0, r1, r2
+}
+
 // ListFloatingIPs provides a mock function with given fields: _a0
 func (_m *Client) ListFloatingIPs(_a0 *godo.ListOptions) ([]godo.FloatingIP, *godo.Response, error) {
 	ret := _m.Called(_a0)
@@ -191,6 +278,29 @@ func (_m *Client) ListFloatingIPs(_a0 *godo.ListOptions) ([]godo.FloatingIP, *go
 	}
 
 	return r0, r1, r2
+}
+
+// RemoveRules provides a mock function with given fields: _a0, _a1
+func (_m *Client) RemoveRules(_a0 string, _a1 []godo.InboundRule) (*godo.Response, error) {
+	ret := _m.Called(_a0, _a1)
+
+	var r0 *godo.Response
+	if rf, ok := ret.Get(0).(func(string, []godo.InboundRule) *godo.Response); ok {
+		r0 = rf(_a0, _a1)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*godo.Response)
+		}
+	}
+
+	var r1 error
+	if rf, ok := ret.Get(1).(func(string, []godo.InboundRule) error); ok {
+		r1 = rf(_a0, _a1)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
 }
 
 // UnassignFloatingIP provides a mock function with given fields: _a0
